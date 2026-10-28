@@ -1,0 +1,12 @@
+package com.nutee.backend.auth.dto;
+
+import com.nutee.backend.user.entity.User;
+import java.util.UUID;
+
+public record UserResponse(UUID id, String username, String email, String fullName,
+        boolean emailVerified, String imageUrl, String role) {
+    public static UserResponse from(User user) {
+        return new UserResponse(user.getId(), user.getUsername(), user.getEmail(), user.getFullName(),
+                user.isEmailVerified(), user.getImageUrl(), user.getRole());
+    }
+}

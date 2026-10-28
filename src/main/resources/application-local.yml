@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/nutee}
+    username: ${DB_USERNAME:nutee}
+    password: ${DB_PASSWORD}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+app:
+  docs-enabled: true
+  security:
+    google:
+      secure-cookie: ${AUTH_SECURE_COOKIE:false}

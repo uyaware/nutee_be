@@ -1,0 +1,22 @@
+# @ServiceConnection supplies the real container connection during integration tests.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:1/testcontainers-required
+    username: test
+    password: test
+    hikari:
+      maximum-pool-size: 3
+      minimum-idle: 0
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+app:
+  docs-enabled: false
+  security:
+    jwt:
+      access-secret: QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
+      refresh-secret: QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=
+    google:
+      enabled: false
+      secure-cookie: false
