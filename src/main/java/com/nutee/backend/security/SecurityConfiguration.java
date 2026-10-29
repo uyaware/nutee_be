@@ -49,6 +49,8 @@ public class SecurityConfiguration {
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors))
                 .authorizeHttpRequests(authorize -> {
+                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**",
+                            "/api/v1/categories", "/api/v1/categories/*", "/api/v1/brands", "/api/v1/brands/*").permitAll();
                     authorize.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
                             "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/google",
                             "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",

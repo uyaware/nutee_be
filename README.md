@@ -4,8 +4,11 @@ Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.14, PostgreSQL 16+, Flyway,
 Spring Data JPA, Spring Security, Jakarta Validation, Springdoc 2.10.0, Lombok,
 JUnit 5, Mockito and PostgreSQL Testcontainers. Spring Boot manages dependency versions.
 
-This modular monolith implements database migrations and authentication. Product,
-cart, order, payment, shipping and after-sales APIs are not part of this delivery.
+This modular monolith implements database migrations, authentication and public
+catalog APIs for products, variants, brands and categories. Cart, order, payment,
+shipping, after-sales mutations and catalog administration are not implemented.
+
+Catalog setup and API reference: [docs/catalog-api.md](docs/catalog-api.md).
 
 ## Run locally on Windows
 
