@@ -1,50 +1,64 @@
 # Implemented token lifecycle
 
-Access and refresh tokens are HS256 JWTs signed with separate, mandatory Base64
-secrets containing at least 32 random bytes each. Exactly one active key is used
-per kind. Secrets must differ; application startup rejects missing/weak keys.
+Access and refresh tokens are HS256 JWTs signed using separate mandatory Base64
+keys of at least 32 random bytes. Keys must differ and remain exclusive to NUTEE.
+Required claims: sub (user UUID), jti (token UUID), iat, exp and token_type.
+Tokens also contain nbf/email; access tokens include the server-assigned role.
+NUTEE omits iss/aud. Google identity verification separately validates its own
+issuer/audience and RSA signature.
 
-Required claims: sub (user UUID), jti (unique token UUID), iat, exp and
-token_type. Tokens issued here also contain nbf and email. Access tokens
-carry the server-assigned role. NUTEE tokens omit issuer and audience and need no
-corresponding configuration. Verification pins HS256 and checks signature,
-timestamps, required identifiers and token type. Keep these keys exclusive to this
-API. Google ID tokens still require Google issuer and client audience validation.
-Google RS256 ID tokens
-are verified separately and are never accepted as NUTEE bearer credentials.
+## Browser transport
 
-Register/login stores the current signed refresh JWT in users.refresh_token, the
-only persisted refresh field. Each user has one current refresh token; a new login
-replaces the previous value. The signed exp claim is an absolute deadline (default
-seven days), not a sliding expiry. No session ID or separate session table is used.
-Refresh verifies the JWT, locks the user row, checks account activity and equality
-with the stored token, and replaces the token pair atomically. The replacement
-keeps the original exp. Older tokens are rejected without clearing the current
-value. Clients must coordinate concurrent refreshes; only one use can succeed.
+The backend sets accessToken and refreshToken in HttpOnly, host-only cookies with
+Path=/api/v1, SameSite=Lax by default and Secure=true outside local HTTP config.
+Remembered cookies receive Max-Age bounded by signed token expiry; otherwise they
+are browser-session cookies. Both cookies accompany API requests automatically
+when fetch uses credentials:include. JWTs are not returned in JSON, exposed to
+JavaScript, stored in browser storage, sent in Authorization or posted in bodies.
+Login/register/Google/refresh return only user and lifetime metadata.
 
-Logout clears users.refresh_token only when the supplied verified token matches
-the current value. Password reset also clears the current refresh token.
-A stale token cannot clear a newer login or refresh. Repeated
-logout with the same unexpired token is harmless.
+A browser has one cookie session shared by tabs and both portals. Login replaces
+the current browser account. Logout clears access/refresh/remember cookies and
+both portal views. /auth/refresh and /auth/logout read refreshToken from the
+request cookie and accept POST without a body. Expired access cookies are ignored
+on public auth endpoints, so they cannot block refresh or logout.
 
-Access verification checks signature and claims without querying session/user
-state. Access tokens remain valid until exp after logout or a new login. Endpoints
-requiring current account state check it explicitly (for example, /auth/me rejects
-disabled accounts). There is no HttpSession or access-token denylist table.
-Frontend code may decode sub, email, exp and role for display; decoding does not
-verify a signature, and the backend must verify tokens before trusting claims.
+## CSRF and frontend coordination
 
-Tokens are JSON response values, not URLs or cookies. Protect refresh tokens in
-the client and never log them. Cookie-based refresh authentication would require
-additional CSRF policy and is not implemented. Google uses a five-minute HttpOnly
-nonce cookie to bind the frontend's Google ID token to the initiating browser;
-the token's nonce must match, and submission clears the cookie.
+All unsafe HTTP methods require CSRF, including public auth mutations. The
+HttpOnly CSRF cookie stores the expected token. GET /api/v1/auth/csrf returns
+token/headerName for the client header and does not create a servlet session.
+Login/register/Google login/logout clear the old CSRF cookie. Missing/invalid
+CSRF returns 403 with code=CSRF_INVALID. Credentialed CORS only allows configured
+origins and X-XSRF-TOKEN; no wildcard origins are allowed.
 
-Google sign-in keys identities by verified provider + sub. Existing-email accounts
-require explicit linking with an authenticated NUTEE access token and a matching
-verified Google email. No Google access/refresh tokens are stored in the database;
-these endpoints authenticate identity and do not request Google API permissions.
+The shared frontend API client always includes cookies, attaches CSRF for mutations,
+refreshes after 401 and retries a protected request once. A queue and Web Locks
+serialize refresh and login/logout across requests/tabs. It probes /auth/me inside
+the lock to avoid rotating again when another tab already refreshed. A CSRF_INVALID
+response reacquires CSRF and retries once; network errors do not trigger refresh.
 
-References: [RFC 7519](https://www.rfc-editor.org/rfc/rfc7519.html),
-[refresh protection, RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14),
-[Google ID-token verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+## Server state
+
+Each user stores one current signed refresh JWT in users.refresh_token. Login
+replaces it. Refresh verifies signature/type/expiry, locks the user, checks activity
+and equality with the stored JWT, and replaces the pair atomically. Refresh keeps
+the original exp; rotation cannot extend the absolute seven-day deadline.
+Older tokens cannot refresh or clear a newer login's stored refresh token.
+
+Logout clears only a matching stored refresh. Missing/expired refresh cookies can
+still log out and clear browser cookies. Invalid refresh returns 401 and clears
+browser auth cookies. Password reset clears the stored refresh token.
+
+Access validation checks signed claims without a user/session lookup. An issued
+access JWT remains valid until exp after logout/reset/new login. APIs needing live
+account state must check it explicitly, as /auth/me does for disabled accounts.
+
+Google identities use provider + verified sub. Existing-email accounts require
+explicit linking using their authenticated access cookie and matching verified
+Google email. No Google access/refresh tokens are stored. A five-minute HttpOnly
+nonce cookie binds the ID token to the browser; submission clears it.
+
+References: [JWT RFC 7519](https://www.rfc-editor.org/rfc/rfc7519.html),
+[Spring CSRF](https://docs.spring.io/spring-security/reference/6.5/servlet/exploits/csrf.html),
+[Google verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).

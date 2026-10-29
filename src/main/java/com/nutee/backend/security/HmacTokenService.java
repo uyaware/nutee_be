@@ -8,6 +8,8 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.nutee.backend.user.entity.User;
+import com.nutee.backend.auth.dto.AuthResponse;
+import com.nutee.backend.auth.dto.UserResponse;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
@@ -24,44 +26,51 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.stereotype.Service;
 
+/** Phát hành và kiểm tra access/refresh JWT bằng hai khóa HMAC riêng. */
 @Service
 public class HmacTokenService {
-    private final TokenProperties lifetimes;
+    private final JwtProperties properties;
     private final byte[] accessKey;
     private final byte[] refreshKey;
     private final JwtDecoder accessDecoder;
     private final JwtDecoder refreshDecoder;
 
-    public HmacTokenService(JwtProperties properties, TokenProperties lifetimes) {
+    /** Khởi tạo hai bộ giải mã, mỗi bộ chỉ chấp nhận đúng khóa và loại token của mình. */
+    public HmacTokenService(JwtProperties properties) {
         if (!properties.isKeyConfigurationValid()) {
             throw new IllegalArgumentException("Distinct Base64 HMAC keys of at least 32 bytes are required.");
         }
-        this.lifetimes = lifetimes;
+        this.properties = properties;
         accessKey = Base64.getDecoder().decode(properties.accessSecret());
         refreshKey = Base64.getDecoder().decode(properties.refreshSecret());
         accessDecoder = decoder(accessKey, "access");
         refreshDecoder = decoder(refreshKey, "refresh");
     }
 
-    public IssuedTokens issue(User user) {
-        return issue(user, Instant.now().plus(lifetimes.refreshTokenTtl()));
+    /** Tạo cặp token mới khi người dùng đăng nhập hoặc đăng ký. */
+    public AuthResponse issue(User user) {
+        return issue(user, Instant.now().plus(properties.refreshTokenTtl()));
     }
 
-    public IssuedTokens issue(User user, Instant refreshExpiresAt) {
+    /** Xoay cặp token nhưng giữ nguyên hạn cuối của phiên refresh ban đầu. */
+    public AuthResponse issue(User user, Instant refreshExpiresAt) {
         Instant now = Instant.now();
-        Instant accessExpiresAt = now.plus(lifetimes.accessTokenTtl());
+        Instant accessExpiresAt = now.plus(properties.accessTokenTtl());
         if (accessExpiresAt.isAfter(refreshExpiresAt)) {
             accessExpiresAt = refreshExpiresAt;
         }
-        return new IssuedTokens(sign(user, "access", now, accessExpiresAt, accessKey),
+        return new AuthResponse(sign(user, "access", now, accessExpiresAt, accessKey),
                 sign(user, "refresh", now, refreshExpiresAt, refreshKey),
                 Math.max(0, accessExpiresAt.getEpochSecond() - now.getEpochSecond()),
-                Math.max(0, refreshExpiresAt.getEpochSecond() - now.getEpochSecond()));
+                Math.max(0, refreshExpiresAt.getEpochSecond() - now.getEpochSecond()), UserResponse.from(user));
     }
 
+    /** Kiểm tra chữ ký, loại và hạn dùng của access token. */
     public Jwt decodeAccess(String token) { return accessDecoder.decode(token); }
+    /** Kiểm tra chữ ký, loại và hạn dùng của refresh token. */
     public Jwt decodeRefresh(String token) { return refreshDecoder.decode(token); }
 
+    /** Ký JWT với thông tin người dùng và các mốc thời gian cần thiết. */
     private String sign(User user, String kind, Instant now, Instant expiresAt, byte[] key) {
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder().subject(user.getId().toString())
                 .jwtID(UUID.randomUUID().toString()).issueTime(Date.from(now))
@@ -78,6 +87,7 @@ public class HmacTokenService {
         }
     }
 
+    /** Tạo bộ giải mã HS256 và bổ sung kiểm tra các claim bắt buộc của NUTEE. */
     private JwtDecoder decoder(byte[] key, String kind) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(new SecretKeySpec(key, "HmacSHA256"))
                 .macAlgorithm(MacAlgorithm.HS256).build();
@@ -101,8 +111,4 @@ public class HmacTokenService {
         return decoder;
     }
 
-    public record IssuedTokens(String accessToken, String refreshToken, long expiresIn, long refreshExpiresIn) {
-        @Override
-        public String toString() { return "IssuedTokens[REDACTED]"; }
-    }
 }

@@ -12,6 +12,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/** Entity tài khoản, lưu thông tin hồ sơ, mật khẩu đã băm và trạng thái phiên hiện tại. */
 @Entity
 @Table(name = "users")
 @Getter
@@ -47,6 +48,7 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** Tạo tài khoản mới với vai trò CUSTOMER và trạng thái hoạt động mặc định. */
     public static User create(String username, String email, String password, String fullName,
             boolean emailVerified, String imageUrl) {
         User user = new User();
@@ -62,19 +64,23 @@ public class User {
         return user;
     }
 
+    /** Đánh dấu email đã được xác minh từ danh tính provider hợp lệ. */
     public void verifyEmail() {
         emailVerified = true;
     }
 
+    /** Thay refresh token hiện tại hoặc xóa token khi đăng xuất. */
     public void replaceRefreshToken(String token) {
         refreshToken = token;
     }
 
+    /** Lưu hash và thời hạn mã khôi phục, thay mã yêu cầu trước đó. */
     public void requestPasswordReset(String hash, Instant expiresAt) {
         passwordResetHash = hash;
         passwordResetExpiresAt = expiresAt;
     }
 
+    /** Thay mật khẩu đã băm, đồng thời xóa mã khôi phục và refresh token. */
     public void resetPassword(String encoded) {
         password = encoded;
         refreshToken = null;
@@ -82,11 +88,13 @@ public class User {
         passwordResetExpiresAt = null;
     }
 
+    /** Gán thời điểm tạo/cập nhật khi tài khoản được lưu lần đầu. */
     @PrePersist
     void initializeTimestamps() {
         createdAt = updatedAt = Instant.now();
     }
 
+    /** Cập nhật mốc thời gian khi thông tin tài khoản thay đổi. */
     @PreUpdate
     void updateTimestamp() {
         updatedAt = Instant.now();

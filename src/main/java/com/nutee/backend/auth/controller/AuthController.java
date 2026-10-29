@@ -1,123 +1,95 @@
 package com.nutee.backend.auth.controller;
 
-import com.nutee.backend.auth.dto.GoogleLoginRequest;
+import com.nutee.backend.auth.dto.AuthResponse;
 import com.nutee.backend.auth.dto.LoginRequest;
-import com.nutee.backend.auth.dto.RefreshRequest;
 import com.nutee.backend.auth.dto.RegisterRequest;
-import com.nutee.backend.auth.dto.TokenResponse;
 import com.nutee.backend.auth.dto.UserResponse;
 import com.nutee.backend.auth.service.AuthService;
-import com.nutee.backend.auth.service.GoogleTokenVerifier;
-import com.nutee.backend.security.GoogleProperties;
+import com.nutee.backend.security.JwtCookies;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
-import java.security.SecureRandom;
-import java.time.Duration;
-import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.CookieValue;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.web.bind.annotation.*;
 
+/** API đăng ký, đăng nhập bằng mật khẩu và quản lý phiên qua cookie. */
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
 public class AuthController {
-    private static final String NONCE_COOKIE = "nutee_google_nonce";
     private final AuthService auth;
-    private final GoogleTokenVerifier google;
-    private final GoogleProperties googleProperties;
-    private final SecureRandom random = new SecureRandom();
+    private final JwtCookies cookies;
 
-    @PostMapping(value = "/register", consumes = "application/json")
+    /** Cấp CSRF cho frontend để gửi trong header của các request thay đổi dữ liệu. */
+    @GetMapping("/csrf")
     @SecurityRequirements
-    public ResponseEntity<TokenResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ResponseEntity.created(URI.create("/api/v1/auth/me")).cacheControl(CacheControl.noStore())
-                .body(auth.register(request));
+    public ResponseEntity<Map<String, String>> csrf(CsrfToken csrf) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(Map.of("token", csrf.getToken(), "headerName", csrf.getHeaderName()));
     }
 
-    @PostMapping(value = "/login", consumes = "application/json")
+    /** Đăng ký tài khoản và đặt cookie đăng nhập; JSON tự ẩn hai JWT. */
+    @PostMapping("/register")
     @SecurityRequirements
-    public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
-        return tokenResponse(auth.login(request));
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest body,
+            HttpServletRequest request, HttpServletResponse response) {
+        AuthResponse session = auth.register(body);
+        cookies.login(request, response, session, false);
+        return ResponseEntity.created(URI.create("/api/v1/auth/me")).cacheControl(CacheControl.noStore()).body(session);
     }
 
-    @PostMapping(value = "/refresh", consumes = "application/json")
+    /** Đăng nhập bằng email/username và áp dụng lựa chọn ghi nhớ đăng nhập. */
+    @PostMapping("/login")
     @SecurityRequirements
-    public ResponseEntity<TokenResponse> refresh(@Valid @RequestBody RefreshRequest request) {
-        return tokenResponse(auth.refresh(request.refreshToken()));
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest body,
+            HttpServletRequest request, HttpServletResponse response) {
+        AuthResponse session = auth.login(body);
+        cookies.login(request, response, session, body.remember());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
     }
 
-    @PostMapping(value = "/logout", consumes = "application/json")
+    /** Xoay JWT bằng refresh cookie; không nhận token trong request body. */
+    @PostMapping("/refresh")
     @SecurityRequirements
-    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
-        auth.logout(request.refreshToken());
+    public ResponseEntity<AuthResponse> refresh(
+            @CookieValue(name = JwtCookies.REFRESH, required = false) String refreshToken,
+            @CookieValue(name = JwtCookies.REMEMBER, defaultValue = "false") boolean remember,
+            HttpServletRequest request, HttpServletResponse response) {
+        try {
+            AuthResponse session = auth.refresh(refreshToken);
+            cookies.issue(response, session, remember);
+            return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
+        } catch (BadCredentialsException exception) {
+            cookies.clear(request, response);
+            throw exception;
+        }
+    }
+
+    /** Thu hồi phiên hiện tại và xóa cookie; đăng xuất lại hoặc phiên hết hạn vẫn trả 204. */
+    @PostMapping("/logout")
+    @SecurityRequirements
+    public ResponseEntity<Void> logout(
+            @CookieValue(name = JwtCookies.REFRESH, required = false) String refreshToken,
+            HttpServletRequest request, HttpServletResponse response) {
+        auth.logout(refreshToken);
+        cookies.clear(request, response);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
+    /** Trả thông tin người dùng từ access cookie đã được filter xác thực. */
     @GetMapping("/me")
-    public UserResponse me(@AuthenticationPrincipal Jwt jwt) {
-        return auth.me(UUID.fromString(jwt.getSubject()));
-    }
-
-    @GetMapping("/google/nonce")
-    @SecurityRequirements
-    public ResponseEntity<Map<String, String>> nonce() {
-        google.requireEnabled();
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    public ResponseEntity<UserResponse> me(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .header(HttpHeaders.SET_COOKIE, cookie(nonce, Duration.ofMinutes(5)).toString())
-                .body(Map.of("nonce", nonce));
-    }
-
-    @PostMapping(value = "/google", consumes = "application/json")
-    @SecurityRequirements
-    public ResponseEntity<TokenResponse> google(@Valid @RequestBody GoogleLoginRequest request,
-            @CookieValue(name = NONCE_COOKIE, required = false) String nonce,
-            HttpServletResponse response) {
-        consumeNonce(nonce, response);
-        return tokenResponse(auth.google(google.verify(request.idToken(), nonce)));
-    }
-
-    @PostMapping(value = "/google/link", consumes = "application/json")
-    public UserResponse linkGoogle(@AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody GoogleLoginRequest request,
-            @CookieValue(name = NONCE_COOKIE, required = false) String nonce,
-            HttpServletResponse response) {
-        consumeNonce(nonce, response);
-        return auth.linkGoogle(UUID.fromString(jwt.getSubject()), google.verify(request.idToken(), nonce));
-    }
-
-    private void consumeNonce(String nonce, HttpServletResponse response) {
-        google.requireEnabled();
-        if (nonce == null || !nonce.matches("[A-Za-z0-9_-]{43}")) {
-            throw new BadCredentialsException("Google nonce is required.");
-        }
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie("", Duration.ZERO).toString());
-    }
-
-    private ResponseCookie cookie(String value, Duration maxAge) {
-        return ResponseCookie.from(NONCE_COOKIE, value).httpOnly(true).secure(googleProperties.secureCookie())
-                .sameSite("Lax").path("/api/v1/auth/google").maxAge(maxAge).build();
-    }
-
-    private ResponseEntity<TokenResponse> tokenResponse(TokenResponse tokens) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(tokens);
+                .body(auth.me(UUID.fromString(jwt.getSubject())));
     }
 }

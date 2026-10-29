@@ -16,6 +16,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/** Lưu liên kết giữa tài khoản NUTEE và mã người dùng ổn định của một provider. */
 @Entity
 @Table(name = "auth_providers")
 @Getter
@@ -36,12 +37,14 @@ public class AuthProvider {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    public AuthProvider(User user, String providerUserId) {
+    /** Tạo liên kết với danh tính đã xác minh của provider tương ứng. */
+    public AuthProvider(User user, String provider, String providerUserId) {
         this.user = user;
-        this.provider = "GOOGLE";
+        this.provider = provider;
         this.providerUserId = providerUserId;
     }
 
+    /** Gán thời điểm tạo và cập nhật khi lưu liên kết lần đầu. */
     @PrePersist
     void initializeTimestamps() {
         createdAt = updatedAt = Instant.now();

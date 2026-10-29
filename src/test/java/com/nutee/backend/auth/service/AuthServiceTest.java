@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.nutee.backend.auth.repository.AuthProviderRepository;
 import com.nutee.backend.security.HmacTokenService;
 import com.nutee.backend.security.JwtProperties;
-import com.nutee.backend.security.TokenProperties;
 import com.nutee.backend.user.entity.User;
 import com.nutee.backend.user.repository.UserRepository;
 import java.time.Duration;
@@ -18,13 +17,13 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.authentication.BadCredentialsException;
 
 class AuthServiceTest {
     private final UserRepository users = mock(UserRepository.class);
     private final HmacTokenService tokens = new HmacTokenService(new JwtProperties(
             "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
-            "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI="),
-            new TokenProperties(Duration.ofMinutes(15), Duration.ofDays(7)));
+            "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=", Duration.ofMinutes(15), Duration.ofDays(7)));
     private final AuthService auth = new AuthService(users, mock(AuthProviderRepository.class),
             mock(PasswordEncoder.class), tokens);
     private User user;
@@ -45,7 +44,7 @@ class AuthServiceTest {
         assertThat(tokens.decodeRefresh(response.refreshToken()).getExpiresAt())
                 .isEqualTo(tokens.decodeRefresh(original).getExpiresAt());
         assertThat(tokens.decodeAccess(response.accessToken()).getClaimAsString("email")).isEqualTo(user.getEmail());
-        assertThatThrownBy(() -> auth.refresh(original)).isInstanceOf(InvalidRefreshTokenException.class);
+        assertThatThrownBy(() -> auth.refresh(original)).isInstanceOf(BadCredentialsException.class);
         assertThat(user.getRefreshToken()).isEqualTo(response.refreshToken());
         auth.refresh(response.refreshToken());
     }
@@ -56,7 +55,7 @@ class AuthServiceTest {
         auth.logout(response.refreshToken());
         auth.logout(response.refreshToken());
         assertThat(user.getRefreshToken()).isNull();
-        assertThatThrownBy(() -> auth.refresh(response.refreshToken())).isInstanceOf(InvalidRefreshTokenException.class);
+        assertThatThrownBy(() -> auth.refresh(response.refreshToken())).isInstanceOf(BadCredentialsException.class);
         assertThat(tokens.decodeAccess(response.accessToken()).getSubject()).isEqualTo(user.getId().toString());
     }
 
@@ -71,15 +70,15 @@ class AuthServiceTest {
     void expiredStoredTokenIsRejectedBeforeDatabaseLookup() {
         String expired = tokens.issue(user, Instant.now().minusSeconds(60)).refreshToken();
         user.replaceRefreshToken(expired);
-        assertThatThrownBy(() -> auth.refresh(expired)).isInstanceOf(InvalidRefreshTokenException.class);
+        assertThatThrownBy(() -> auth.refresh(expired)).isInstanceOf(BadCredentialsException.class);
         verifyNoInteractions(users);
     }
 
     @Test
-    void accessAndMalformedTokensCannotRefreshOrLogout() {
+    void invalidTokensCannotRefreshAndLogoutRemainsIdempotent() {
         for (String invalid : new String[]{tokens.issue(user).accessToken(), "invalid-token"}) {
-            assertThatThrownBy(() -> auth.refresh(invalid)).isInstanceOf(InvalidRefreshTokenException.class);
-            assertThatThrownBy(() -> auth.logout(invalid)).isInstanceOf(InvalidRefreshTokenException.class);
+            assertThatThrownBy(() -> auth.refresh(invalid)).isInstanceOf(BadCredentialsException.class);
+            auth.logout(invalid);
         }
         verifyNoInteractions(users);
     }

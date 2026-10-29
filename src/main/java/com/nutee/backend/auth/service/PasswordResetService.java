@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** Xử lý mã khôi phục mật khẩu, gửi email và thu hồi refresh token sau khi đổi mật khẩu. */
 @Service
 public class PasswordResetService {
     private final UserRepository users;
@@ -30,6 +31,7 @@ public class PasswordResetService {
     private final boolean enabled;
     private final SecureRandom random = new SecureRandom();
 
+    /** Nhận cấu hình gửi mail và kiểm tra URL khôi phục đáng tin cậy. */
     public PasswordResetService(UserRepository users, PasswordEncoder passwords, JavaMailSender mail,
             @Value("${app.password-reset.url}") String resetUrl,
             @Value("${app.password-reset.from}") String from,
@@ -47,6 +49,7 @@ public class PasswordResetService {
         this.enabled = enabled;
     }
 
+    /** Tạo mã một lần, gửi email và chỉ lưu hash; giới hạn gửi lại trong một phút. */
     @Transactional
     public void forgot(String email) {
         requireEnabled();
@@ -77,6 +80,7 @@ public class PasswordResetService {
         }
     }
 
+    /** Tiêu thụ mã còn hạn trong transaction, đổi mật khẩu và hủy phiên refresh cũ. */
     @Transactional
     public void reset(String token, String password) {
         requireEnabled();
@@ -90,6 +94,7 @@ public class PasswordResetService {
         user.resetPassword(passwords.encode(password));
     }
 
+    /** Băm mã khôi phục bằng SHA-256 để không lưu mã gốc trong cơ sở dữ liệu. */
     static String hash(String token) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -97,10 +102,12 @@ public class PasswordResetService {
         } catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
     }
 
+    /** Tạo lỗi chung cho mã khôi phục không hợp lệ, đã dùng hoặc đã hết hạn. */
     private static ApiException invalidToken() {
         return new ApiException(HttpStatus.BAD_REQUEST, "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
     }
 
+    /** Chặn khôi phục mật khẩu khi email chưa được cấu hình và bật. */
     private void requireEnabled() {
         if (!enabled) throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
                 "Khôi phục mật khẩu qua email hiện chưa khả dụng.");

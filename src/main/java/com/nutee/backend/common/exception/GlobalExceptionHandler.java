@@ -24,16 +24,19 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+/** Chuẩn hóa lỗi validation, nghiệp vụ và lỗi bất ngờ thành ProblemDetail. */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
+    /** Trả status và thông báo của lỗi nghiệp vụ đã được kiểm soát. */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Object> handleApi(ApiException exception, WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
         return handleExceptionInternal(exception, problem, new HttpHeaders(), exception.getStatus(), request);
     }
 
+    /** Đổi lỗi ràng buộc dữ liệu thành 409 mà không lộ câu SQL. */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Object> handleConflict(DataIntegrityViolationException exception, WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
@@ -41,6 +44,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(exception, problem, new HttpHeaders(), HttpStatus.CONFLICT, request);
     }
 
+    /** Trả danh sách trường không hợp lệ khi kiểm tra request body. */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
             MethodArgumentNotValidException exception, HttpHeaders headers,
@@ -53,6 +57,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return validationResponse(exception, errors, headers, status, request);
     }
 
+    /** Xử lý validation ở tham số controller, vẫn che lỗi phát sinh trong giá trị trả về. */
     @Override
     protected ResponseEntity<Object> handleHandlerMethodValidationException(
             HandlerMethodValidationException exception, HttpHeaders headers,
@@ -68,6 +73,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return validationResponse(exception, errors, headers, status, request);
     }
 
+    /** Trả lỗi 400 dễ hiểu khi JSON không đọc được. */
     @Override
     protected ResponseEntity<Object> handleHttpMessageNotReadable(
             HttpMessageNotReadableException exception, HttpHeaders headers,
@@ -76,6 +82,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(exception, problem, headers, status, request);
     }
 
+    /** Chuyển lỗi constraint thành danh sách trường và thông báo. */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Object> handleConstraintViolation(
             ConstraintViolationException exception, WebRequest request) {
@@ -86,6 +93,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return validationResponse(exception, errors, new HttpHeaders(), HttpStatus.BAD_REQUEST, request);
     }
 
+    /** Ghi log lỗi hệ thống và trả thông báo chung để tránh lộ chi tiết nội bộ. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleUnexpected(Exception exception, WebRequest request) {
         log.error("Unhandled request failure", exception);
@@ -93,6 +101,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 HttpStatus.INTERNAL_SERVER_ERROR, request);
     }
 
+    /** Trả 403 khi người dùng thiếu quyền thực hiện thao tác. */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Object> handleAccessDenied(AccessDeniedException exception, WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
@@ -100,6 +109,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(exception, problem, new HttpHeaders(), HttpStatus.FORBIDDEN, request);
     }
 
+    /** Trả 401 thống nhất khi thông tin xác thực không hợp lệ. */
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<Object> handleAuthentication(AuthenticationException exception, WebRequest request) {
         HttpHeaders headers = new HttpHeaders();
@@ -109,6 +119,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(exception, problem, headers, HttpStatus.UNAUTHORIZED, request);
     }
 
+    /** Thêm đường dẫn, thời điểm và che nội dung lỗi server trước khi trả response. */
     @Override
     protected ResponseEntity<Object> handleExceptionInternal(
             Exception exception, @Nullable Object body, HttpHeaders headers,
@@ -126,6 +137,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return super.handleExceptionInternal(exception, problem, headers, status, request);
     }
 
+    /** Dùng chung định dạng danh sách lỗi validation của các loại request. */
     private ResponseEntity<Object> validationResponse(
             Exception exception, List<ValidationError> errors, HttpHeaders headers,
             HttpStatusCode status, WebRequest request) {

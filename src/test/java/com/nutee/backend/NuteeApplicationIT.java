@@ -96,7 +96,7 @@ class NuteeApplicationIT {
     void enabledDocumentationExposesBearerSchemeAndSwaggerUi() throws Exception {
         mvc.perform(get("/api/v1/api-docs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"));
+                .andExpect(jsonPath("$.components.securitySchemes.jwtAuth.in").value("cookie"));
         mvc.perform(get("/api/v1/swagger-ui.html"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "/api/v1/swagger-ui/index.html"));

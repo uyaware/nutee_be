@@ -1,5 +1,7 @@
 package com.nutee.backend;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
@@ -67,7 +69,7 @@ class InfrastructureWebTest {
 
     @Test
     void validationReturnsFieldErrorsWithoutRejectedValues() throws Exception {
-        mvc.perform(post("/api/v1/_test/validate").with(user("tester"))
+        mvc.perform(post("/api/v1/_test/validate").with(csrf()).with(user("tester"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"private-invalid-input\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -77,7 +79,7 @@ class InfrastructureWebTest {
 
     @Test
     void malformedJsonHasSafeErrorMessage() throws Exception {
-        mvc.perform(post("/api/v1/_test/validate").with(user("tester"))
+        mvc.perform(post("/api/v1/_test/validate").with(csrf()).with(user("tester"))
                         .contentType(MediaType.APPLICATION_JSON).content("{invalid"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Malformed request body."));

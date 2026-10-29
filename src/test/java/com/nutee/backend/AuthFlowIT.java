@@ -1,5 +1,7 @@
 package com.nutee.backend;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -14,9 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nutee.backend.auth.service.AuthService;
-import com.nutee.backend.auth.service.GoogleIdentity;
+import com.nutee.backend.auth.service.SocialIdentity;
 import com.nutee.backend.auth.service.GoogleTokenVerifier;
-import com.nutee.backend.auth.service.InvalidRefreshTokenException;
 import com.nutee.backend.security.HmacTokenService;
 import com.nutee.backend.user.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
@@ -27,6 +28,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,6 +65,11 @@ class AuthFlowIT {
     @Autowired private HmacTokenService tokens;
     @MockitoBean private GoogleTokenVerifier google;
 
+    @BeforeEach
+    void configureGoogleStrategy() {
+        given(google.name()).willReturn("GOOGLE");
+    }
+
     @Test
     void registrationHashesPasswordAndReturnsSafeTokensAndUser() throws Exception {
         String username = username();
@@ -83,7 +90,7 @@ class AuthFlowIT {
     @Test
     void registrationAcceptsFrontendEmailAndPasswordWithoutUsername() throws Exception {
         String email = username() + "@example.com";
-        mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("email", email, "password", PASSWORD))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.user.username").isNotEmpty())
@@ -95,9 +102,9 @@ class AuthFlowIT {
         String username = username();
         register(username);
         for (String identifier : new String[]{username.toUpperCase(), (username + "@example.com").toUpperCase()}) {
-            mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", PASSWORD))))
-                    .andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").isNotEmpty());
+                    .andExpect(status().isOk()).andExpect(header().exists("Set-Cookie"));
         }
     }
 
@@ -105,13 +112,13 @@ class AuthFlowIT {
     void newLoginReplacesRefreshTokenAndOldLogoutCannotClearIt() throws Exception {
         String username = username();
         JsonNode original = register(username);
-        var result = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+        var result = mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
                 .andExpect(status().isOk()).andReturn().getResponse();
-        JsonNode latest = json.readTree(result.getContentAsString());
+        JsonNode latest = cookieSession(result);
         refresh(original.path("refreshToken").asText(), 401);
-        mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(Map.of("refreshToken", original.path("refreshToken").asText()))))
+        mvc.perform(post("/api/v1/auth/logout").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .cookie(new Cookie("refreshToken", original.path("refreshToken").asText())))
                 .andExpect(status().isNoContent());
         assertThat(jdbc.queryForObject("SELECT refresh_token FROM users WHERE username = ?", String.class,
                 username)).isEqualTo(latest.path("refreshToken").asText());
@@ -123,7 +130,7 @@ class AuthFlowIT {
         String username = username();
         register(username);
         for (String identifier : new String[]{username, "unknown_" + username}) {
-            mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", "wrong-password"))))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.detail").value("Authentication is required."));
@@ -137,7 +144,7 @@ class AuthFlowIT {
         for (Map<String, String> request : java.util.List.of(
                 Map.of("username", username.toUpperCase(), "email", username + "other@example.com", "password", PASSWORD),
                 Map.of("username", username + "other", "email", (username + "@example.com").toUpperCase(), "password", PASSWORD))) {
-            mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(request))).andExpect(status().isConflict());
         }
     }
@@ -146,7 +153,7 @@ class AuthFlowIT {
     void validationRejectsWeakAndOverlongUtf8Passwords() throws Exception {
         for (String password : new String[]{"short", "é".repeat(40)}) {
             String username = username();
-            mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("username", username, "email", username + "@example.com",
                             "password", password)))).andExpect(status().isBadRequest());
         }
@@ -155,9 +162,9 @@ class AuthFlowIT {
     @Test
     void accessAndRefreshTokensCannotBeSubstituted() throws Exception {
         JsonNode response = register(username());
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + response.path("accessToken").asText()))
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("accessToken").asText())))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(response.path("user").path("id").asText()));
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + response.path("refreshToken").asText()))
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("refreshToken").asText())))
                 .andExpect(status().isUnauthorized());
         refresh(response.path("accessToken").asText(), 401);
         refresh("invalid-token", 401);
@@ -171,7 +178,7 @@ class AuthFlowIT {
         refresh(original.path("refreshToken").asText(), 401);
         assertThat(tokens.decodeRefresh(rotated.path("refreshToken").asText()).getExpiresAt())
                 .isEqualTo(tokens.decodeRefresh(original.path("refreshToken").asText()).getExpiresAt());
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + rotated.path("accessToken").asText()))
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", rotated.path("accessToken").asText())))
                 .andExpect(status().isOk());
         refresh(rotated.path("refreshToken").asText(), 200);
     }
@@ -180,11 +187,11 @@ class AuthFlowIT {
     void logoutClearsRefreshTokenAndAccessRemainsValidUntilExpiry() throws Exception {
         JsonNode response = register(username());
         for (int i = 0; i < 2; i++) {
-            mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
-                    .content(json.writeValueAsBytes(Map.of("refreshToken", response.path("refreshToken").asText()))))
+            mvc.perform(post("/api/v1/auth/logout").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .cookie(new Cookie("refreshToken", response.path("refreshToken").asText())))
                     .andExpect(status().isNoContent());
         }
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + response.path("accessToken").asText()))
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("accessToken").asText())))
                 .andExpect(status().isOk());
         refresh(response.path("refreshToken").asText(), 401);
         assertThat(jdbc.queryForObject("SELECT refresh_token FROM users WHERE id = ?", String.class,
@@ -196,10 +203,10 @@ class AuthFlowIT {
         String username = username();
         JsonNode response = register(username);
         jdbc.update("UPDATE users SET is_active = false WHERE username = ?", username);
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + response.path("accessToken").asText()))
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("accessToken").asText())))
                 .andExpect(status().isUnauthorized());
         refresh(response.path("refreshToken").asText(), 401);
-        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
                 .andExpect(status().isUnauthorized());
     }
@@ -223,7 +230,7 @@ class AuthFlowIT {
             var task = (java.util.concurrent.Callable<Boolean>) () -> {
                 start.await();
                 try { auth.refresh(refreshToken); return true; }
-                catch (InvalidRefreshTokenException exception) { return false; }
+                catch (BadCredentialsException exception) { return false; }
             };
             var first = pool.submit(task);
             var second = pool.submit(task);
@@ -231,13 +238,13 @@ class AuthFlowIT {
             assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(true, false);
         }
-        assertThatThrownBy(() -> auth.refresh(refreshToken)).isInstanceOf(InvalidRefreshTokenException.class);
+        assertThatThrownBy(() -> auth.refresh(refreshToken)).isInstanceOf(BadCredentialsException.class);
     }
 
     @Test
     void googleCreatesUserAndSubsequentLoginFindsSameProviderIdentity() throws Exception {
         String email = username() + "@example.com";
-        given(google.verify(anyString(), anyString())).willReturn(new GoogleIdentity(UUID.randomUUID().toString(),
+        given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
                 email, "Google User", "https://example.com/photo"));
         JsonNode first = googleLogin(200);
         JsonNode second = googleLogin(200);
@@ -245,7 +252,7 @@ class AuthFlowIT {
         var user = users.findByEmailIgnoreCase(email).orElseThrow();
         assertThat(user.getPassword()).isNull();
         assertThat(user.isEmailVerified()).isTrue();
-        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("identifier", email, "password", PASSWORD))))
                 .andExpect(status().isUnauthorized());
     }
@@ -254,11 +261,11 @@ class AuthFlowIT {
     void googleDoesNotAutoLinkExistingEmailButAllowsAuthenticatedLinking() throws Exception {
         String username = username();
         JsonNode local = register(username);
-        given(google.verify(anyString(), anyString())).willReturn(new GoogleIdentity(UUID.randomUUID().toString(),
+        given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
                 username + "@example.com", "Google User", null));
         googleLogin(409);
-        mvc.perform(post("/api/v1/auth/google/link").cookie(new Cookie("nutee_google_nonce", NONCE))
-                .header("Authorization", "Bearer " + local.path("accessToken").asText())
+        mvc.perform(post("/api/v1/auth/google/link").with(csrf()).cookie(new Cookie("nutee_google_nonce", NONCE))
+                .cookie(new Cookie("accessToken", local.path("accessToken").asText()))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"idToken\":\"google-token\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.emailVerified").value(true));
         JsonNode linked = googleLogin(200);
@@ -267,7 +274,7 @@ class AuthFlowIT {
 
     @Test
     void googleRequiresNonceAndRejectsInvalidCredential() throws Exception {
-        mvc.perform(post("/api/v1/auth/google").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/api/v1/auth/google").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"idToken\":\"google-token\"}")).andExpect(status().isUnauthorized());
         given(google.verify(anyString(), anyString())).willThrow(new BadCredentialsException("Invalid Google token"));
         googleLogin(401);
@@ -303,26 +310,41 @@ class AuthFlowIT {
     }
 
     private JsonNode register(String username) throws Exception {
-        var response = mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+        var response = mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("username", username, "email", username + "@example.com",
                         "password", PASSWORD, "role", "ADMIN"))))
                 .andExpect(status().isCreated()).andExpect(header().string("Cache-Control", "no-store"))
                 .andReturn().getResponse();
-        return json.readTree(response.getContentAsString());
+        return cookieSession(response);
     }
 
     private JsonNode refresh(String token, int expected) throws Exception {
-        var response = mvc.perform(post("/api/v1/auth/refresh").contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(Map.of("refreshToken", token))))
+        var response = mvc.perform(post("/api/v1/auth/refresh").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .cookie(new Cookie("refreshToken", token)))
                 .andExpect(status().is(expected)).andReturn().getResponse();
-        return json.readTree(response.getContentAsString());
+        return cookieSession(response);
     }
 
     private JsonNode googleLogin(int expected) throws Exception {
-        var response = mvc.perform(post("/api/v1/auth/google").contentType(MediaType.APPLICATION_JSON)
+        var response = mvc.perform(post("/api/v1/auth/google").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .cookie(new Cookie("nutee_google_nonce", NONCE)).content("{\"idToken\":\"google-token\"}"))
                 .andExpect(status().is(expected)).andReturn().getResponse();
-        return json.readTree(response.getContentAsString());
+        return cookieSession(response);
+    }
+
+    // Tokens are extracted only from HttpOnly Set-Cookie for server-side integration assertions.
+    private JsonNode cookieSession(org.springframework.mock.web.MockHttpServletResponse response) throws Exception {
+        var body = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(response.getContentAsString());
+        assertThat(body.has("accessToken")).isFalse();
+        assertThat(body.has("refreshToken")).isFalse();
+        for (String name : new String[]{"accessToken", "refreshToken"}) {
+            Cookie cookie = response.getCookie(name);
+            if (cookie != null && !cookie.getValue().isBlank()) {
+                assertThat(cookie.isHttpOnly()).isTrue();
+                body.put(name, cookie.getValue());
+            }
+        }
+        return body;
     }
 
     private static String username() { return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12); }

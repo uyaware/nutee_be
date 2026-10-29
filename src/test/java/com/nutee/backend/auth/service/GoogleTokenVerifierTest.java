@@ -45,7 +45,7 @@ class GoogleTokenVerifierTest {
             try (var output = exchange.getResponseBody()) { output.write(json); }
         });
         server.start();
-        verifier = new GoogleTokenVerifier(new GoogleProperties(true, "test-client", false),
+        verifier = new GoogleTokenVerifier(new GoogleProperties(true, "test-client"),
                 "http://localhost:" + server.getAddress().getPort() + "/jwks");
     }
 
@@ -75,7 +75,7 @@ class GoogleTokenVerifierTest {
 
     @Test
     void disabledGoogleRequiresConfiguration() {
-        GoogleTokenVerifier disabled = new GoogleTokenVerifier(new GoogleProperties(false, "", false));
+        GoogleTokenVerifier disabled = new GoogleTokenVerifier(new GoogleProperties(false, ""));
         assertThatThrownBy(() -> disabled.verify("anything", "nonce")).isInstanceOf(ApiException.class);
     }
 

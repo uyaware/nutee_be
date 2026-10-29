@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.nutee.backend.security.SecurityConfiguration;
 import com.nutee.backend.security.SecurityErrorHandler;
+import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,19 +37,19 @@ class JwtSecurityWebTest {
     private JwtDecoder decoder;
 
     @Test
-    void verifiedBearerTokenAuthenticatesWithoutSession() throws Exception {
+    void verifiedAccessCookieAuthenticatesWithoutSession() throws Exception {
         given(decoder.decode("verified-token")).willReturn(Jwt.withTokenValue("verified-token")
                 .header("alg", "HS256").subject("test-subject")
                 .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).build());
-        mvc.perform(get("/api/v1/_test/jwt").header("Authorization", "Bearer verified-token"))
+        mvc.perform(get("/api/v1/_test/jwt").cookie(new Cookie("accessToken", "verified-token")))
                 .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Set-Cookie"));
     }
 
     @Test
-    void invalidBearerTokenGetsConsistentUnauthorizedResponse() throws Exception {
+    void invalidAccessCookieGetsConsistentUnauthorizedResponse() throws Exception {
         given(decoder.decode(anyString())).willThrow(new BadJwtException("private-decoder-detail"));
-        mvc.perform(get("/api/v1/_test/jwt").header("Authorization", "Bearer invalid-token"))
+        mvc.perform(get("/api/v1/_test/jwt").cookie(new Cookie("accessToken", "invalid-token")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.detail").value("Authentication is required."));

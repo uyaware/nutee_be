@@ -27,8 +27,7 @@ class JwtConfigurationTest {
 
     @BeforeEach
     void configure() {
-        tokens = new HmacTokenService(new JwtProperties(ACCESS, REFRESH),
-                new TokenProperties(Duration.ofMinutes(15), Duration.ofDays(7)));
+        tokens = new HmacTokenService(new JwtProperties(ACCESS, REFRESH, Duration.ofMinutes(15), Duration.ofDays(7)));
         user = User.create("tester", "test@example.com", "hash", "Test", false, null);
     }
 
@@ -67,8 +66,7 @@ class JwtConfigurationTest {
     @Test
     void rejectsWrongSecretAndAlgorithm() throws Exception {
         var issued = tokens.issue(user, Instant.now().plusSeconds(300));
-        HmacTokenService other = new HmacTokenService(new JwtProperties(REFRESH, ACCESS),
-                new TokenProperties(Duration.ofMinutes(15), Duration.ofDays(7)));
+        HmacTokenService other = new HmacTokenService(new JwtProperties(REFRESH, ACCESS, Duration.ofMinutes(15), Duration.ofDays(7)));
         assertThatThrownBy(() -> other.decodeAccess(issued.accessToken())).isInstanceOf(JwtException.class);
         SignedJWT hs384 = new SignedJWT(new JWSHeader(JWSAlgorithm.HS384), new JWTClaimsSet.Builder()
                 .subject(user.getId().toString()).build());
@@ -82,10 +80,10 @@ class JwtConfigurationTest {
     void refusesWeakEqualAndMissingKeys() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            assertThat(validator.validate(new JwtProperties(ACCESS, REFRESH))).isEmpty();
-            assertThat(validator.validate(new JwtProperties(ACCESS, ACCESS))).isNotEmpty();
-            assertThat(validator.validate(new JwtProperties("c2hvcnQ=", REFRESH))).isNotEmpty();
-            assertThat(validator.validate(new JwtProperties(null, null))).isNotEmpty();
+            assertThat(validator.validate(new JwtProperties(ACCESS, REFRESH, Duration.ofMinutes(15), Duration.ofDays(7)))).isEmpty();
+            assertThat(validator.validate(new JwtProperties(ACCESS, ACCESS, Duration.ofMinutes(15), Duration.ofDays(7)))).isNotEmpty();
+            assertThat(validator.validate(new JwtProperties("c2hvcnQ=", REFRESH, Duration.ofMinutes(15), Duration.ofDays(7)))).isNotEmpty();
+            assertThat(validator.validate(new JwtProperties(null, null, Duration.ofMinutes(15), Duration.ofDays(7)))).isNotEmpty();
         }
     }
 

@@ -16,16 +16,19 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
+/** Strategy Google: xác minh ID token bằng khóa công khai của Google và nonce trình duyệt. */
 @Service
-public class GoogleTokenVerifier {
+public class GoogleTokenVerifier implements SocialLoginProvider {
     private final GoogleProperties properties;
     private final JwtDecoder decoder;
 
+    /** Dùng địa chỉ khóa công khai chính thức khi chạy ứng dụng. */
     @Autowired
     public GoogleTokenVerifier(GoogleProperties properties) {
         this(properties, "https://www.googleapis.com/oauth2/v3/certs");
     }
 
+    /** Cho phép dùng máy chủ khóa cục bộ khi kiểm tra chữ ký trong test. */
     GoogleTokenVerifier(GoogleProperties properties, String jwkSetUri) {
         this.properties = properties;
         if (properties.enabled()) {
@@ -38,6 +41,12 @@ public class GoogleTokenVerifier {
         } else { decoder = null; }
     }
 
+    /** Mã lưu liên kết tài khoản Google trong cơ sở dữ liệu. */
+    @Override
+    public String name() { return "GOOGLE"; }
+
+    /** Từ chối đăng nhập Google khi tính năng chưa được cấu hình và bật. */
+    @Override
     public void requireEnabled() {
         if (!properties.enabled()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
@@ -45,7 +54,9 @@ public class GoogleTokenVerifier {
         }
     }
 
-    public GoogleIdentity verify(String token, String nonce) {
+    /** Xác minh credential, nonce và trả về danh tính chung cho mọi provider. */
+    @Override
+    public SocialIdentity verify(String token, String nonce) {
         requireEnabled();
         try {
             Jwt jwt = decoder.decode(token);
@@ -54,13 +65,14 @@ public class GoogleTokenVerifier {
             }
             String name = jwt.getClaimAsString("name");
             if (name != null && name.length() > 100) { name = name.substring(0, 100); }
-            return new GoogleIdentity(jwt.getSubject(), jwt.getClaimAsString("email"), name,
+            return new SocialIdentity(jwt.getSubject(), jwt.getClaimAsString("email"), name,
                     jwt.getClaimAsString("picture"));
         } catch (JwtException | IllegalArgumentException exception) {
             throw new BadCredentialsException("Invalid Google identity.");
         }
     }
 
+    /** Chỉ nhận token từ Google, đúng client ID, còn hạn và có email đã xác minh. */
     static boolean validClaims(Jwt jwt, String clientId) {
         try {
             String issuer = jwt.getClaimAsString("iss");

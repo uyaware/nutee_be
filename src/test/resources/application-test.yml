@@ -14,9 +14,10 @@ spring:
 app:
   docs-enabled: false
   security:
+    cookies:
+      secure: false
     jwt:
       access-secret: QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
       refresh-secret: QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=
     google:
       enabled: false
-      secure-cookie: false

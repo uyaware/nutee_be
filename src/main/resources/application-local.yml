@@ -13,5 +13,5 @@ springdoc:
 app:
   docs-enabled: true
   security:
-    google:
-      secure-cookie: ${AUTH_SECURE_COOKIE:false}
+    cookies:
+      secure: ${AUTH_SECURE_COOKIE:false}

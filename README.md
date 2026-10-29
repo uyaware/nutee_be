@@ -33,7 +33,7 @@ Never overwrite `.env` with the template after initialization: that would replac
 configuration needed by the existing database. Changing POSTGRES_PASSWORD does not
 change an already initialized PostgreSQL role's password.
 
-The application automatically applies Flyway V1 before JPA validates its
+The application automatically applies Flyway V1/V2 before JPA validates its
 mappings (`ddl-auto: validate`). It does not use Hibernate to create tables.
 V1 includes `users.refresh_token`; the earlier V2 refresh-session migration was
 removed. Existing databases that applied the old V1/V2 need an explicit schema
@@ -54,154 +54,127 @@ On Unix, ensure the generated wrapper is executable (`chmod +x mvnw`).
 
 ## Authentication API
 
-All POST bodies below are JSON. Register/login/Google sign-in return a token pair
-and a safe user DTO; `expiresIn` / `refreshExpiresIn` are seconds.
-Tokens are returned in JSON with Cache-Control: no-store; there are no token URLs
-or authentication cookies. Do not send an expired Authorization header to the
-public refresh/logout endpoints, as bearer authentication will reject it first.
+Backend xác thực bằng JWT; cookie HttpOnly chỉ dùng để lưu và tự gửi token.
+Tên trong code và Swagger là `JwtAuthenticationFilter`, `JwtCookies`, `jwtAuth`.
+
+### Tổ chức code
+
+- `AuthController`: đăng ký, đăng nhập bằng mật khẩu, refresh và logout.
+- `AuthService`: nghiệp vụ tài khoản, phiên JWT và liên kết danh tính.
+- `HmacTokenService`: phát hành và kiểm tra access/refresh JWT; cấu hình nằm trong `JwtProperties`.
+- `JwtAuthenticationFilter`: xác thực access JWT đọc từ cookie.
+- `JwtCookies`: đặt và xóa cookie JWT, không xác minh token.
+- `AuthResponse`: kết quả dùng chung; hai JWT có `@JsonIgnore`, chỉ dùng để đặt cookie.
+- `SocialLoginProvider`: Strategy xác minh danh tính; hiện chỉ có `GoogleTokenVerifier`.
+- `SocialLoginController`: chọn Strategy và gọi nghiệp vụ tài khoản dùng chung.
+
+Khi được yêu cầu thêm provider, triển khai `SocialLoginProvider` và đăng ký bằng
+`@Service`; không cần thêm factory hoặc sao chép nghiệp vụ đăng nhập. Hiện không có
+implementation hay mock provider khác. `/auth/google` và trường `idToken` cũ vẫn
+được giữ tương thích; `/auth/social/google` nhận cùng credential.
+
+Quy tắc thay đổi code được ghi tại [AGENTS.md](AGENTS.md). Các class và method
+viết tay trong `src/main/java` có Javadoc tiếng Việt mô tả công dụng.
+
+The backend delivers accessToken and refreshToken only through HttpOnly Set-Cookie
+headers. The browser sends both cookies automatically to /api/v1. JSON responses
+contain only expiresIn, refreshExpiresIn (seconds) and the safe user DTO.
 
 | Method / path | Body / purpose | Status |
 | --- | --- | --- |
+| GET /api/v1/auth/csrf | CSRF cookie + token/headerName for JavaScript | 200 |
 | POST /api/v1/auth/register | email, password; optional username, fullName | 201 |
-| POST /api/v1/auth/login | identifier (email or username), password | 200 |
-| POST /api/v1/auth/refresh | refreshToken; rotates the token pair | 200 |
-| POST /api/v1/auth/logout | refreshToken; clears the matching user refresh token | 204 |
-| GET /api/v1/auth/me | Access bearer token required | 200 |
+| POST /api/v1/auth/login | identifier (email or username), password, optional remember | 200 |
+| POST /api/v1/auth/refresh | No body; reads refreshToken cookie and rotates both cookies | 200 |
+| POST /api/v1/auth/logout | No body; revokes matching refresh and clears cookies | 204 |
+| GET /api/v1/auth/me | Reads accessToken cookie | 200 |
 | GET /api/v1/auth/google/nonce | Browser nonce + HttpOnly nonce cookie | 200 |
-| POST /api/v1/auth/google | idToken, with the nonce cookie | 200 |
-| POST /api/v1/auth/google/link | idToken + nonce cookie + access bearer | 200 |
-| POST /api/v1/auth/forgot-password | email; generic response, sends reset email | 200 |
-| POST /api/v1/auth/reset-password | token, password; consumes reset link | 204 |
+| POST /api/v1/auth/google?remember=false | idToken + nonce cookie | 200 |
+| POST /api/v1/auth/google/link | idToken + nonce cookie + authenticated access cookie | 200 |
+| POST /api/v1/auth/forgot-password | email; generic response when enabled | 200 |
+| POST /api/v1/auth/reset-password | Single-use reset-link token, password | 204 |
 
-Example PowerShell:
+Every state-changing request requires the CSRF header obtained from /auth/csrf.
+The CSRF cookie is also HttpOnly; use the bootstrap JSON token rather than reading
+document.cookie. CSRF tokens are rotated on login/register/Google login/logout.
+Missing/invalid CSRF returns 403 with code=CSRF_INVALID. The frontend shared API
+client reacquires CSRF and retries once; ordinary forbidden responses are not retried.
+No HttpSession/JSESSIONID is created.
 
-```powershell
-$base = 'http://localhost:8080/api/v1'
-# Choose your own username/email/password. Do not commit real credentials.
-$body = @{
-    username = 'my_username'
-    email = 'your-address@example.com'
-    password = 'replace-with-your-own-password'
-    fullName = 'Your Name'
-} | ConvertTo-Json
-$session = Invoke-RestMethod "$base/auth/register" -Method Post -ContentType application/json -Body $body
+Example using the shared frontend client:
 
-$login = @{ identifier = 'my_username'; password = 'replace-with-your-own-password' } | ConvertTo-Json
-$session = Invoke-RestMethod "$base/auth/login" -Method Post -ContentType application/json -Body $login
-Invoke-RestMethod "$base/auth/me" -Headers @{ Authorization = "Bearer $($session.accessToken)" }
+```typescript
+import { api } from "./services";
 
-# Replace the entire pair after every successful refresh. Serialize refresh calls.
-$body = @{ refreshToken = $session.refreshToken } | ConvertTo-Json
-$session = Invoke-RestMethod "$base/auth/refresh" -Method Post -ContentType application/json -Body $body
-$body = @{ refreshToken = $session.refreshToken } | ConvertTo-Json
-Invoke-RestMethod "$base/auth/logout" -Method Post -ContentType application/json -Body $body
+await api.request("/auth/login", {
+  method: "POST",
+  authenticated: false,
+  body: { identifier: "your-address@example.com", password: "your-password", remember: true },
+});
+const user = await api.request("/auth/me");
+await api.request("/auth/refresh", { method: "POST", authenticated: false });
+await api.request("/auth/logout", { method: "POST", authenticated: false });
 ```
 
-Username: generated when omitted, or 3-50 ASCII letters, digits or underscores. Email and username identities
-are case-insensitive. Password: at least 12 characters, at most 72 UTF-8 bytes
-(BCrypt's limit), stored using BCrypt strength 12. Roles are assigned by the server;
-registration cannot grant ADMIN. Local email starts unverified; email verification
-is a separate future feature. Google-only accounts have no
-local password. Disabled users cannot login, refresh, or fetch their profile.
-Bearer verification uses signed claims; endpoints needing current account state
-must check it explicitly, as `/auth/me` does.
+For raw fetch, set credentials:include on every call, bootstrap CSRF before POST,
+and send the returned token using its headerName. Do not copy JWTs into a request
+body or Authorization header. Access-cookie authentication skips public auth routes,
+so an expired access cookie cannot block login, refresh or logout.
 
-Errors use application/problem+json: 400 validation, 401 invalid credentials or
-token, 403 forbidden, 409 identity conflict. Validation reports fields/messages,
-never passwords or rejected values. No JPA entities are returned by controllers.
+Username is generated when omitted, or accepts 3-50 ASCII letters/digits/underscores.
+Email/username identities are case-insensitive. Passwords require 12+ characters
+and at most 72 UTF-8 bytes, and use BCrypt strength 12. Registration assigns CUSTOMER.
+Disabled accounts cannot login/refresh/fetch their profile. Errors use ProblemDetail:
+400 validation, 401 invalid session, 403 CSRF/permissions, 409 identity conflict.
 
-## HMAC token configuration
+## Cookies and HMAC tokens
 
 | Variable | Purpose / default |
 | --- | --- |
-| JWT_ACCESS_SECRET | Mandatory Base64 encoding of at least 32 random bytes |
-| JWT_REFRESH_SECRET | Mandatory different Base64 secret, at least 32 random bytes |
+| JWT_ACCESS_SECRET | Mandatory Base64 encoding of 32+ random bytes |
+| JWT_REFRESH_SECRET | Mandatory different Base64 secret of 32+ random bytes |
 | ACCESS_TOKEN_TTL | 15m |
 | REFRESH_TOKEN_TTL | 7d absolute refresh lifetime |
+| AUTH_SECURE_COOKIE | true; local profile defaults to false for HTTP |
+| AUTH_COOKIE_SAME_SITE | Lax; None requires Secure/HTTPS |
 
-NUTEE JWTs omit `iss` and `aud`; no JWT_ISSUER/JWT_AUDIENCE configuration is needed.
-Use dedicated keys for this API, without sharing them with other services.
-Both token kinds use HS256 with exactly one secret per kind. There is no external
-issuer, JWK URL, or JWT_ENABLED switch for NUTEE tokens anymore. Google ID tokens
-are separately verified against Google's RSA public keys. Refresh JWTs cannot be
-used as access bearer tokens, and access JWTs cannot renew sessions.
+Auth cookies are host-only and use Path=/api/v1, HttpOnly and configured SameSite.
+Without remember=true they are browser-session cookies. Remembered access cookies
+have Max-Age=expiresIn; refresh/remember cookies have Max-Age=refreshExpiresIn.
+Cookies are shared by the browser's tabs and both portals; a new login replaces the
+current browser account. A logout clears both portal views. JavaScript never stores
+JWTs in localStorage/sessionStorage or reads them from cookies.
 
-Each user stores one current signed JWT in `users.refresh_token` (TEXT, nullable).
-Register/login replaces it; a new login invalidates the previous refresh token.
-Refresh verifies the signature, token type and expiry, locks the user row, checks
-the stored value, and replaces the token pair. Older tokens are rejected without
-clearing the current token. Clients must serialize refresh calls and replace the
-old pair. Refresh preserves the original seven-day deadline from the JWT `exp`.
-Logout clears only a matching current refresh token; stale logout requests do
-not clear a newer login's token.
+NUTEE JWTs use separate HS256 keys and omit iss/aud. Do not share these keys with
+other services. Verification checks signature, timestamps, sub/jti and token_type.
+Each user stores one current signed refresh JWT in users.refresh_token. Login
+replaces it; refresh locks the user, verifies equality and rotates both JWTs while
+preserving the original absolute refresh deadline. Access JWTs do not authenticate
+refresh requests and refresh JWTs do not authenticate protected API calls.
 
-Access authentication validates JWT claims/signature without a session lookup.
-JWTs include `sub` (user ID), `email`, `exp`, and access tokens also include `role`.
-The frontend can decode these claims for display; the backend verifies them before
-trusting them. Logout does not invalidate issued access tokens: they remain usable
-until expiry (default 15 minutes). There are no servlet sessions, form login or HTTP Basic.
-There are no token cookies, so CSRF is disabled for these JSON/bearer endpoints.
-The Google flow additionally binds its ID token to a browser nonce cookie.
-See [token design](docs/token-design.md) for details.
+Logout clears the matching stored refresh token and browser cookies. Issued access
+JWTs remain cryptographically valid until expiry; browser JavaScript cannot retrieve
+them. Endpoints requiring live account state must check it explicitly (/auth/me does).
+See [token design](docs/token-design.md).
 
-## TODO: enable Google sign-in
+## Enable Google sign-in
 
-1. Create/select a project in [Google Cloud Console](https://console.cloud.google.com/).
-2. Configure the Google Auth consent screen, audience/test users as applicable.
-3. Create an OAuth Client ID of type **Web application**.
-4. Add the exact frontend Authorized JavaScript origins, e.g. http://localhost:3000
-   and http://localhost for local testing, as described in Google's setup guide.
-5. Set `GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com` and
-   `GOOGLE_AUTH_ENABLED=true` in `.env`, then restart the backend.
-6. Set `CORS_ALLOWED_ORIGINS` to the same exact trusted frontend origins (comma-separated).
-7. Set the same Client ID as `VITE_GOOGLE_CLIENT_ID` in `frontend/.env.local`, then restart Vite.
+Google remains disabled until GOOGLE_AUTH_ENABLED=true and GOOGLE_CLIENT_ID is set.
+Use a Google OAuth Web Client ID and configure the exact frontend JavaScript origins.
+Set that same Client ID as VITE_GOOGLE_CLIENT_ID in frontend/.env.local and restart Vite.
+No Google API key or client secret is needed for this ID-token flow.
 
-This is the Google Identity Services JavaScript ID-token flow. It needs a Client
-ID, not an API key or a client secret, and has no backend OAuth redirect URI.
-Google remains disabled until configured; Google endpoints return a clear 503
-while local email/username authentication continues working.
+The frontend loads Google Identity Services, obtains /auth/google/nonce, initializes
+Google with that nonce, then submits the credential to /auth/google through the shared
+CSRF/cookie API client. The backend verifies Google's RSA signature, issuer, audience,
+timestamps, email_verified, stable sub and browser nonce. Existing-email accounts
+require explicit authenticated linking; they are not automatically merged.
 
-Load `https://accounts.google.com/gsi/client` in your frontend, then:
-
-```javascript
-const api = 'http://localhost:8080/api/v1';
-const response = await fetch(`${api}/auth/google/nonce`, { credentials: 'include' });
-if (!response.ok) throw new Error('Google sign-in is unavailable');
-const { nonce } = await response.json();
-google.accounts.id.initialize({
-  client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
-  nonce,
-  callback: async ({ credential }) => {
-    const result = await fetch(`${api}/auth/google`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: credential })
-    });
-    if (!result.ok) throw new Error('Google sign-in failed');
-    const session = await result.json(); // Handle privately; never log tokens.
-    // Keep the access token in memory and send it as a Bearer token to protected APIs.
-  }
-});
-google.accounts.id.renderButton(document.getElementById('google-sign-in'), { theme: 'outline' });
-```
-
-Fetch a new nonce before each sign-in attempt; it expires after five minutes and
-the cookie is cleared on submission. The backend verifies Google signatures,
-issuer, audience/client ID, timestamps, email_verified, sub and nonce. Provider
-identity uses Google's stable sub, not the email. A new identity creates a customer;
-an existing identity signs in to its associated user. An existing email is not
-automatically linked. Sign in locally, obtain a fresh Google nonce/credential, and
-POST `/auth/google/link` with your access bearer token to link the matching email.
-
-This browser example assumes frontend and API are same-site (localhost with
-different ports locally, or app.example.com/api.example.com in production). The
-nonce cookie uses SameSite=Lax and HttpOnly. For production, use HTTPS and
-`AUTH_SECURE_COOKIE=true`; the application defaults to secure cookies outside local.
-Cross-site frontend/API deployments require a separately reviewed cookie policy.
-
-Google setup references: [create a client ID](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid),
-[server verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+Prefer same-origin hosting through an /api/v1 reverse proxy. Direct backend calls
+need explicit CORS_ALLOWED_ORIGINS and credentials:include; production uses HTTPS.
+Google nonce cookies use SameSite=Lax, so the Google browser flow assumes same-site
+frontend/API hosting. Google setup: [create a client ID](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid),
+[verify ID tokens](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
 
 ## Schema, architecture and operations
 

@@ -14,6 +14,11 @@
 > recovery are disabled until their provider configuration is supplied. The sections
 > below describing mandatory iss/aud and deferred password recovery are superseded.
 
+> Browser transport now uses HttpOnly accessToken and refreshToken cookies scoped
+> to /api/v1, with CSRF protection and no token fields in response JSON or refresh/logout
+> bodies. Cookies share one browser account across portals. The Authorization-only
+> and separate-portal-cookie proposals below are superseded as well.
+
 Date: 2026-10-28. Status: detailed implementation proposal; application code and database have not been changed.
 
 The user confirmed email/password website login with CUSTOMER, STAFF, and ADMIN roles. Remaining policy choices below are proposed defaults, not claims that the features already exist.

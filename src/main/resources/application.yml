@@ -81,15 +81,16 @@ app:
     url: ${PASSWORD_RESET_URL:http://localhost:5173/reset-password}
     from: ${MAIL_FROM:no-reply@nutee.local}
   security:
-    tokens:
-      access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
-      refresh-token-ttl: ${REFRESH_TOKEN_TTL:7d}
+    cookies:
+      secure: ${AUTH_SECURE_COOKIE:true}
+      same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
     jwt:
       access-secret: ${JWT_ACCESS_SECRET:}
       refresh-secret: ${JWT_REFRESH_SECRET:}
+      access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
+      refresh-token-ttl: ${REFRESH_TOKEN_TTL:7d}
     google:
       enabled: ${GOOGLE_AUTH_ENABLED:false}
       client-id: ${GOOGLE_CLIENT_ID:}
-      secure-cookie: ${AUTH_SECURE_COOKIE:true}
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:}

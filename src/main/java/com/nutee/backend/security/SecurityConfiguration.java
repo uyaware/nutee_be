@@ -13,6 +13,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import java.util.List;
@@ -21,18 +25,20 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+/** Cấu hình bảo mật HTTP: cookie JWT, CSRF, phân quyền và CORS. */
 @Configuration(proxyBeanMethods = false)
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, TokenProperties.class, GoogleProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, GoogleProperties.class, CookieProperties.class})
 public class SecurityConfiguration {
 
+    /** Thiết lập các route công khai và filter kiểm tra JWT; các thao tác ghi vẫn phải có CSRF. */
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http,
-            SecurityErrorHandler errors, @Value("${app.docs-enabled:false}") boolean docsEnabled)
+            SecurityErrorHandler errors, JwtDecoder decoder, CsrfTokenRepository csrfTokens,
+            @Value("${app.docs-enabled:false}") boolean docsEnabled)
             throws Exception {
         http
-                // Bearer tokens will use the Authorization header; no cookie authentication exists.
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> csrf.csrfTokenRepository(csrfTokens))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(AbstractHttpConfigurer::disable)
@@ -45,8 +51,10 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(authorize -> {
                     authorize.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
                             "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/google",
-                            "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password").permitAll();
-                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/auth/google/nonce").permitAll();
+                            "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",
+                            "/api/v1/auth/social/*").permitAll();
+                    authorize.requestMatchers(HttpMethod.GET, "/api/v1/auth/google/nonce", "/api/v1/auth/csrf",
+                            "/api/v1/auth/social/*/nonce").permitAll();
                     authorize.requestMatchers(HttpMethod.GET,
                             "/api/v1/actuator/health", "/api/v1/actuator/health/liveness",
                             "/api/v1/actuator/health/readiness").permitAll();
@@ -62,17 +70,34 @@ public class SecurityConfiguration {
             String role = jwt.getClaimAsString("role");
             return role == null ? List.of() : List.of(new SimpleGrantedAuthority("ROLE_" + role));
         });
-        http.oauth2ResourceServer(resourceServer -> resourceServer
-                .jwt(jwt -> jwt.jwtAuthenticationConverter(converter))
-                .authenticationEntryPoint(errors).accessDeniedHandler(errors));
+        // JWT được gửi trong cookie nên vẫn phải kiểm tra CSRF cho request ghi dữ liệu.
+        http.addFilterBefore(new JwtAuthenticationFilter(decoder, converter, errors),
+                UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
+    /** Cung cấp bộ giải mã access JWT trực tiếp từ dịch vụ token, không qua lớp cấu hình trung gian. */
+    @Bean
+    JwtDecoder jwtDecoder(HmacTokenService tokens) {
+        return tokens::decodeAccess;
+    }
+
+    /** Lưu CSRF trong cookie HttpOnly; frontend lấy giá trị header qua endpoint /auth/csrf. */
+    @Bean
+    CsrfTokenRepository csrfTokenRepository(CookieProperties properties) {
+        CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
+        repository.setCookieCustomizer(cookie -> cookie.path(JwtCookies.PATH).httpOnly(true)
+                .secure(properties.secure()).sameSite(properties.sameSite()));
+        return repository;
+    }
+
+    /** Dùng BCrypt để băm và đối chiếu mật khẩu. */
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
     }
 
+    /** Chỉ cho các frontend đã cấu hình gửi request kèm cookie và header CSRF. */
     @Bean
     CorsConfigurationSource corsConfigurationSource(
             @Value("${app.security.cors.allowed-origins:}") String origins) {
@@ -83,8 +108,8 @@ public class SecurityConfiguration {
         }
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowed);
-        configuration.setAllowedMethods(List.of("GET", "POST", "HEAD", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Content-Type", "X-XSRF-TOKEN"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
