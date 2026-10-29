@@ -14,10 +14,10 @@ public class OpenApiConfiguration {
     @Bean
     OpenAPI nuteeOpenApi() {
         return new OpenAPI()
-                .info(new Info().title("NUTEE API").version("v1")
-                        .description("NUTEE local and Google authentication with HS256 access/refresh tokens."))
-                .components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
-                        .type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")))
-                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
-    }
+			.info(new Info().title("NUTEE API").version("v1")
+				.description("NUTEE local and Google authentication with HS256 access/refresh tokens."))
+			.components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
+				.type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")))
+			.addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
+}
 }

@@ -25,9 +25,11 @@ Columns retain their source meaning with these spelling/type corrections:
   identities, and one identity per provider per user. Google-only users have NULL
   passwords. Passwords are BCrypt hashes; the default role is CUSTOMER.
 
-V2 adds `refresh_sessions`, a security table needed for the requested refresh
-rotation, reuse detection, and logout. It stores the current refresh JWT's SHA-256
-hash, ownership, absolute expiry, and revocation metadata. Keys are not stored in DB.
+Per the updated user request, V2 and `refresh_sessions` have been removed. V1 adds
+only `users.refresh_token` (nullable TEXT) for the current signed refresh JWT.
+User ID, email, and expiry are JWT claims; no separate token metadata is persisted.
+Each login replaces the stored token, refresh rotates it under a user row lock,
+and logout clears it when the supplied token matches. Keys are not stored in DB.
 
-Only user/provider/session tables need JPA mappings for this delivery. Other domain
+Only user/provider tables need JPA mappings for this delivery. Other domain
 tables are migrated and constrained; domain CRUD remains outside this auth task.

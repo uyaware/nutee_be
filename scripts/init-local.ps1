@@ -53,6 +53,9 @@ foreach ($secretName in @('JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET')) {
 $configurationDefaults = [ordered]@{
     GOOGLE_AUTH_ENABLED = 'false'
     GOOGLE_CLIENT_ID = ''
+    PASSWORD_RESET_ENABLED = 'false'
+    MAIL_USERNAME = ''
+    MAIL_PASSWORD = ''
     AUTH_SECURE_COOKIE = 'false'
     CORS_ALLOWED_ORIGINS = 'http://localhost:3000,http://localhost:5173'
     ACCESS_TOKEN_TTL = '15m'
@@ -68,6 +71,7 @@ $envContent = $envContent.Replace('# Lifetimes reserved for future authenticatio
     '# Access lifetime and absolute refresh-session lifetime.')
 $envContent = $envContent -replace '(?m)^JWT_ENABLED=.*(?:\r?\n|$)', ''
 $envContent = $envContent -replace '(?m)^JWT_JWK_SET_URI=.*(?:\r?\n|$)', ''
+$envContent = $envContent -replace '(?m)^JWT_(ISSUER|AUDIENCE)=.*(?:\r?\n|$)', ''
 foreach ($setting in $configurationDefaults.GetEnumerator()) {
     if ($envContent -notmatch "(?m)^$($setting.Key)=") {
         $envContent = $envContent.TrimEnd() + "`n$($setting.Key)=$($setting.Value)`n"

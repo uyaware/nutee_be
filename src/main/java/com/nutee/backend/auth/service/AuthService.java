@@ -5,17 +5,13 @@ import com.nutee.backend.auth.dto.RegisterRequest;
 import com.nutee.backend.auth.dto.TokenResponse;
 import com.nutee.backend.auth.dto.UserResponse;
 import com.nutee.backend.auth.entity.AuthProvider;
-import com.nutee.backend.auth.entity.RefreshSession;
 import com.nutee.backend.auth.repository.AuthProviderRepository;
-import com.nutee.backend.auth.repository.RefreshSessionRepository;
 import com.nutee.backend.common.exception.ApiException;
 import com.nutee.backend.security.HmacTokenService;
-import com.nutee.backend.security.TokenProperties;
 import com.nutee.backend.user.entity.User;
 import com.nutee.backend.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -30,27 +26,23 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
     private final UserRepository users;
     private final AuthProviderRepository providers;
-    private final RefreshSessionRepository sessions;
     private final PasswordEncoder passwords;
     private final HmacTokenService tokens;
-    private final TokenProperties lifetimes;
     private final String dummyPassword;
 
     public AuthService(UserRepository users, AuthProviderRepository providers,
-            RefreshSessionRepository sessions, PasswordEncoder passwords,
-            HmacTokenService tokens, TokenProperties lifetimes) {
+            PasswordEncoder passwords, HmacTokenService tokens) {
         this.users = users;
         this.providers = providers;
-        this.sessions = sessions;
         this.passwords = passwords;
         this.tokens = tokens;
-        this.lifetimes = lifetimes;
         dummyPassword = passwords.encode(UUID.randomUUID().toString());
     }
 
     @Transactional
     public TokenResponse register(RegisterRequest request) {
-        String username = normalize(request.username());
+        String username = request.username() == null ? "user_" + UUID.randomUUID().toString().replace("-", "")
+                : normalize(request.username());
         String email = normalize(request.email());
         if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Password must not exceed 72 UTF-8 bytes.");
@@ -77,32 +69,23 @@ public class AuthService {
         return startSession(user);
     }
 
-    @Transactional(noRollbackFor = InvalidRefreshTokenException.class)
+    @Transactional
     public TokenResponse refresh(String token) {
         Jwt jwt = decodeRefresh(token);
-        RefreshSession session = sessions.findForUpdate(UUID.fromString(jwt.getClaimAsString("sid")))
+        User user = users.findForUpdate(UUID.fromString(jwt.getSubject()))
                 .orElseThrow(InvalidRefreshTokenException::new);
-        Instant now = Instant.now();
-        if (!session.getUser().getId().toString().equals(jwt.getSubject())
-                || session.getRevokedAt() != null || !session.getExpiresAt().isAfter(now)
-                || !session.getUser().isActive()) {
+        if (!user.isActive() || !matchesRefreshToken(user, token)) {
             throw new InvalidRefreshTokenException();
         }
-        if (!MessageDigest.isEqual(session.getTokenHash().getBytes(StandardCharsets.US_ASCII),
-                HmacTokenService.hash(token).getBytes(StandardCharsets.US_ASCII))) {
-            session.revoke(now);
-            throw new InvalidRefreshTokenException();
-        }
-        return rotate(session);
+        return storeTokens(user, tokens.issue(user, jwt.getExpiresAt()));
     }
 
     @Transactional
     public void logout(String token) {
         Jwt jwt = decodeRefresh(token);
-        sessions.findForUpdate(UUID.fromString(jwt.getClaimAsString("sid"))).ifPresent(session -> {
-            if (session.getUser().getId().toString().equals(jwt.getSubject())) {
-                // A signed older token may still revoke its own session; never another user's session.
-                session.revoke(Instant.now());
+        users.findForUpdate(UUID.fromString(jwt.getSubject())).ifPresent(user -> {
+            if (matchesRefreshToken(user, token)) {
+                user.replaceRefreshToken(null);
             }
         });
     }
@@ -151,18 +134,21 @@ public class AuthService {
     }
 
     private TokenResponse startSession(User user) {
-        Instant now = Instant.now();
-        RefreshSession session = new RefreshSession(UUID.randomUUID(), user, now.plus(lifetimes.refreshTokenTtl()), now);
-        TokenResponse response = rotate(session);
-        sessions.save(session);
-        return response;
+        User locked = users.findForUpdate(user.getId())
+                .orElseThrow(() -> new BadCredentialsException("Invalid account."));
+        requireActive(locked);
+        return storeTokens(locked, tokens.issue(locked));
     }
 
-    private TokenResponse rotate(RefreshSession session) {
-        var issued = tokens.issue(session.getUser(), session.getId(), session.getExpiresAt());
-        session.rotate(HmacTokenService.hash(issued.refreshToken()), Instant.now());
+    private TokenResponse storeTokens(User user, HmacTokenService.IssuedTokens issued) {
+        user.replaceRefreshToken(issued.refreshToken());
         return new TokenResponse(issued.accessToken(), issued.refreshToken(), "Bearer", issued.expiresIn(),
-                issued.refreshExpiresIn(), UserResponse.from(session.getUser()));
+                issued.refreshExpiresIn(), UserResponse.from(user));
+    }
+
+    private boolean matchesRefreshToken(User user, String token) {
+        return user.getRefreshToken() != null && MessageDigest.isEqual(
+                user.getRefreshToken().getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
     }
 
     private Jwt decodeRefresh(String token) {

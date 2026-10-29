@@ -17,8 +17,10 @@ import com.nutee.backend.auth.service.AuthService;
 import com.nutee.backend.auth.service.GoogleIdentity;
 import com.nutee.backend.auth.service.GoogleTokenVerifier;
 import com.nutee.backend.auth.service.InvalidRefreshTokenException;
+import com.nutee.backend.security.HmacTokenService;
 import com.nutee.backend.user.repository.UserRepository;
 import jakarta.servlet.http.Cookie;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -58,6 +60,7 @@ class AuthFlowIT {
     @Autowired private PasswordEncoder passwords;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private AuthService auth;
+    @Autowired private HmacTokenService tokens;
     @MockitoBean private GoogleTokenVerifier google;
 
     @Test
@@ -69,11 +72,22 @@ class AuthFlowIT {
         assertThat(user.getPassword()).isNotEqualTo(PASSWORD);
         assertThat(user.isEmailVerified()).isFalse();
         assertThat(response.path("user").has("password")).isFalse();
+        assertThat(response.path("user").has("refreshToken")).isFalse();
         assertThat(response.path("user").path("role").asText()).isEqualTo("CUSTOMER");
         assertThat(response.path("expiresIn").asLong()).isEqualTo(900);
-        String stored = jdbc.queryForObject("SELECT token_hash FROM refresh_sessions WHERE user_id = ?",
+        String stored = jdbc.queryForObject("SELECT refresh_token FROM users WHERE id = ?",
                 String.class, user.getId());
-        assertThat(stored).hasSize(64).isNotEqualTo(response.path("refreshToken").asText());
+        assertThat(stored).isEqualTo(response.path("refreshToken").asText());
+    }
+
+    @Test
+    void registrationAcceptsFrontendEmailAndPasswordWithoutUsername() throws Exception {
+        String email = username() + "@example.com";
+        mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("email", email, "password", PASSWORD))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.user.username").isNotEmpty())
+                .andExpect(jsonPath("$.user.email").value(email));
     }
 
     @Test
@@ -85,6 +99,23 @@ class AuthFlowIT {
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", PASSWORD))))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").isNotEmpty());
         }
+    }
+
+    @Test
+    void newLoginReplacesRefreshTokenAndOldLogoutCannotClearIt() throws Exception {
+        String username = username();
+        JsonNode original = register(username);
+        var result = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        JsonNode latest = json.readTree(result.getContentAsString());
+        refresh(original.path("refreshToken").asText(), 401);
+        mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("refreshToken", original.path("refreshToken").asText()))))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("SELECT refresh_token FROM users WHERE username = ?", String.class,
+                username)).isEqualTo(latest.path("refreshToken").asText());
+        refresh(latest.path("refreshToken").asText(), 200);
     }
 
     @Test
@@ -133,20 +164,20 @@ class AuthFlowIT {
     }
 
     @Test
-    void rotationAndReplayDetectionCommitRevocation() throws Exception {
+    void rotationRejectsOldTokenAndKeepsCurrentTokenUsable() throws Exception {
         JsonNode original = register(username());
         JsonNode rotated = refresh(original.path("refreshToken").asText(), 200);
         assertThat(rotated.path("refreshToken").asText()).isNotEqualTo(original.path("refreshToken").asText());
         refresh(original.path("refreshToken").asText(), 401);
-        refresh(rotated.path("refreshToken").asText(), 401);
+        assertThat(tokens.decodeRefresh(rotated.path("refreshToken").asText()).getExpiresAt())
+                .isEqualTo(tokens.decodeRefresh(original.path("refreshToken").asText()).getExpiresAt());
         mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + rotated.path("accessToken").asText()))
-                .andExpect(status().isUnauthorized());
-        assertThat(jdbc.queryForObject("SELECT revoked_at IS NOT NULL FROM refresh_sessions WHERE user_id = ?",
-                Boolean.class, UUID.fromString(original.path("user").path("id").asText()))).isTrue();
+                .andExpect(status().isOk());
+        refresh(rotated.path("refreshToken").asText(), 200);
     }
 
     @Test
-    void logoutImmediatelyRevokesAccessAndRefreshForThatSession() throws Exception {
+    void logoutClearsRefreshTokenAndAccessRemainsValidUntilExpiry() throws Exception {
         JsonNode response = register(username());
         for (int i = 0; i < 2; i++) {
             mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
@@ -154,8 +185,10 @@ class AuthFlowIT {
                     .andExpect(status().isNoContent());
         }
         mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + response.path("accessToken").asText()))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk());
         refresh(response.path("refreshToken").asText(), 401);
+        assertThat(jdbc.queryForObject("SELECT refresh_token FROM users WHERE id = ?", String.class,
+                UUID.fromString(response.path("user").path("id").asText()))).isNull();
     }
 
     @Test
@@ -172,17 +205,17 @@ class AuthFlowIT {
     }
 
     @Test
-    void refreshSessionHasAbsoluteExpiry() throws Exception {
+    void expiredRefreshTokenIsRejectedEvenWhenStoredOnUser() throws Exception {
         JsonNode response = register(username());
-        jdbc.update("UPDATE refresh_sessions SET expires_at = now() - interval '1 second' WHERE user_id = ?",
-                UUID.fromString(response.path("user").path("id").asText()));
-        refresh(response.path("refreshToken").asText(), 401);
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + response.path("accessToken").asText()))
-                .andExpect(status().isUnauthorized());
+        UUID id = UUID.fromString(response.path("user").path("id").asText());
+        var user = users.findById(id).orElseThrow();
+        String expired = tokens.issue(user, Instant.now().minusSeconds(60)).refreshToken();
+        jdbc.update("UPDATE users SET refresh_token = ? WHERE id = ?", expired, id);
+        refresh(expired, 401);
     }
 
     @Test
-    void concurrentRefreshSerializesAndDetectsReplay() throws Exception {
+    void concurrentRefreshOnlyAcceptsTheStoredTokenOnce() throws Exception {
         JsonNode response = register(username());
         String refreshToken = response.path("refreshToken").asText();
         CountDownLatch start = new CountDownLatch(1);

@@ -5,6 +5,7 @@ CREATE TABLE users (
     username VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
     password VARCHAR(255),
+    refresh_token TEXT,
     full_name VARCHAR(100),
     phone VARCHAR(10),
     email_verified BOOLEAN NOT NULL DEFAULT false,

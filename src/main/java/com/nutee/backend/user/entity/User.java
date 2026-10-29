@@ -24,6 +24,12 @@ public class User {
     @Column(nullable = false)
     private String email;
     private String password;
+    @Column(name = "refresh_token", columnDefinition = "text")
+    private String refreshToken;
+    @Column(name = "password_reset_hash", length = 64)
+    private String passwordResetHash;
+    @Column(name = "password_reset_expires_at")
+    private Instant passwordResetExpiresAt;
     @Column(name = "full_name", length = 100)
     private String fullName;
     @Column(length = 10)
@@ -58,6 +64,22 @@ public class User {
 
     public void verifyEmail() {
         emailVerified = true;
+    }
+
+    public void replaceRefreshToken(String token) {
+        refreshToken = token;
+    }
+
+    public void requestPasswordReset(String hash, Instant expiresAt) {
+        passwordResetHash = hash;
+        passwordResetExpiresAt = expiresAt;
+    }
+
+    public void resetPassword(String encoded) {
+        password = encoded;
+        refreshToken = null;
+        passwordResetHash = null;
+        passwordResetExpiresAt = null;
     }
 
     @PrePersist

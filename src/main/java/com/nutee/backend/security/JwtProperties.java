@@ -2,15 +2,13 @@ package com.nutee.backend.security;
 
 import jakarta.validation.constraints.AssertTrue;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import jakarta.validation.constraints.NotBlank;
 import java.security.MessageDigest;
 import java.util.Base64;
 import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties("app.security.jwt")
-public record JwtProperties(@NotBlank String issuer, @NotBlank String audience,
-        String accessSecret, String refreshSecret) {
+public record JwtProperties(String accessSecret, String refreshSecret) {
 
     @AssertTrue(message = "JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be distinct Base64 keys of at least 32 bytes")
     public boolean isKeyConfigurationValid() {

@@ -7,7 +7,7 @@ import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-/** Configurable access lifetime and absolute refresh-session lifetime. */
+/** Configurable access lifetime and absolute refresh-token lifetime. */
 @Validated
 @ConfigurationProperties("app.security.tokens")
 public record TokenProperties(

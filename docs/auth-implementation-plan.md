@@ -2,10 +2,17 @@
 
 > Historical proposal. The subsequent user request specifies email/username and
 > Google sign-in, HS256 access and refresh JWTs with separate HMAC secrets, and
-> implementation of all ERD tables. Those choices supersede the RS256/opaque-token,
+> implementation of all ERD tables. The latest request also replaces session/token
+> tables with one `users.refresh_token` field and verifies access from JWT claims.
+> Those choices supersede the RS256/opaque-token and session-history designs,
 > email-only and deferred-social-login proposals below. See [README](../README.md),
 > [implemented token lifecycle](token-design.md) and [schema decisions](schema-decisions.md)
 > for the delivered behavior. Other proposals below remain future work.
+
+> The current implementation also removes issuer/audience from NUTEE JWTs and
+> implements frontend auth plus optional email password recovery. Google and email
+> recovery are disabled until their provider configuration is supplied. The sections
+> below describing mandatory iss/aud and deferred password recovery are superseded.
 
 Date: 2026-10-28. Status: detailed implementation proposal; application code and database have not been changed.
 

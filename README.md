@@ -33,8 +33,12 @@ Never overwrite `.env` with the template after initialization: that would replac
 configuration needed by the existing database. Changing POSTGRES_PASSWORD does not
 change an already initialized PostgreSQL role's password.
 
-The application automatically applies Flyway V1 and V2 before JPA validates its
+The application automatically applies Flyway V1 before JPA validates its
 mappings (`ddl-auto: validate`). It does not use Hibernate to create tables.
+V1 includes `users.refresh_token`; the earlier V2 refresh-session migration was
+removed. Existing databases that applied the old V1/V2 need an explicit schema
+and Flyway-history reconciliation before startup; this source change does not
+reset or modify existing database data.
 
 | URL | Purpose |
 | --- | --- |
@@ -58,14 +62,16 @@ public refresh/logout endpoints, as bearer authentication will reject it first.
 
 | Method / path | Body / purpose | Status |
 | --- | --- | --- |
-| POST /api/v1/auth/register | username, email, password, optional fullName | 201 |
+| POST /api/v1/auth/register | email, password; optional username, fullName | 201 |
 | POST /api/v1/auth/login | identifier (email or username), password | 200 |
 | POST /api/v1/auth/refresh | refreshToken; rotates the token pair | 200 |
-| POST /api/v1/auth/logout | refreshToken; revokes that login session | 204 |
+| POST /api/v1/auth/logout | refreshToken; clears the matching user refresh token | 204 |
 | GET /api/v1/auth/me | Access bearer token required | 200 |
 | GET /api/v1/auth/google/nonce | Browser nonce + HttpOnly nonce cookie | 200 |
 | POST /api/v1/auth/google | idToken, with the nonce cookie | 200 |
 | POST /api/v1/auth/google/link | idToken + nonce cookie + access bearer | 200 |
+| POST /api/v1/auth/forgot-password | email; generic response, sends reset email | 200 |
+| POST /api/v1/auth/reset-password | token, password; consumes reset link | 204 |
 
 Example PowerShell:
 
@@ -91,12 +97,14 @@ $body = @{ refreshToken = $session.refreshToken } | ConvertTo-Json
 Invoke-RestMethod "$base/auth/logout" -Method Post -ContentType application/json -Body $body
 ```
 
-Username: 3-50 ASCII letters, digits or underscores. Email and username identities
+Username: generated when omitted, or 3-50 ASCII letters, digits or underscores. Email and username identities
 are case-insensitive. Password: at least 12 characters, at most 72 UTF-8 bytes
 (BCrypt's limit), stored using BCrypt strength 12. Roles are assigned by the server;
 registration cannot grant ADMIN. Local email starts unverified; email verification
-and password reset are separate future features. Google-only accounts have no
-local password. Disabled users cannot login, refresh, or use existing access tokens.
+is a separate future feature. Google-only accounts have no
+local password. Disabled users cannot login, refresh, or fetch their profile.
+Bearer verification uses signed claims; endpoints needing current account state
+must check it explicitly, as `/auth/me` does.
 
 Errors use application/problem+json: 400 validation, 401 invalid credentials or
 token, 403 forbidden, 409 identity conflict. Validation reports fields/messages,
@@ -108,26 +116,30 @@ never passwords or rejected values. No JPA entities are returned by controllers.
 | --- | --- |
 | JWT_ACCESS_SECRET | Mandatory Base64 encoding of at least 32 random bytes |
 | JWT_REFRESH_SECRET | Mandatory different Base64 secret, at least 32 random bytes |
-| JWT_ISSUER | Token issuer identifier; nutee-backend |
-| JWT_AUDIENCE | Receiving API identifier; nutee-api |
 | ACCESS_TOKEN_TTL | 15m |
-| REFRESH_TOKEN_TTL | 7d absolute session lifetime |
+| REFRESH_TOKEN_TTL | 7d absolute refresh lifetime |
 
+NUTEE JWTs omit `iss` and `aud`; no JWT_ISSUER/JWT_AUDIENCE configuration is needed.
+Use dedicated keys for this API, without sharing them with other services.
 Both token kinds use HS256 with exactly one secret per kind. There is no external
 issuer, JWK URL, or JWT_ENABLED switch for NUTEE tokens anymore. Google ID tokens
 are separately verified against Google's RSA public keys. Refresh JWTs cannot be
 used as access bearer tokens, and access JWTs cannot renew sessions.
 
-Refresh sessions store a SHA-256 hash of the current signed refresh token, never
-the token itself. Rotation uses a database row lock. Reuse of an older valid token
-revokes the whole session, including its access tokens. Concurrent refresh requests
-are therefore treated as reuse: clients must serialize refresh calls and replace
-the old pair. Refresh does not extend the original seven-day deadline. Logout
-revokes only that login session; other device/login sessions stay active.
+Each user stores one current signed JWT in `users.refresh_token` (TEXT, nullable).
+Register/login replaces it; a new login invalidates the previous refresh token.
+Refresh verifies the signature, token type and expiry, locks the user row, checks
+the stored value, and replaces the token pair. Older tokens are rejected without
+clearing the current token. Clients must serialize refresh calls and replace the
+old pair. Refresh preserves the original seven-day deadline from the JWT `exp`.
+Logout clears only a matching current refresh token; stale logout requests do
+not clear a newer login's token.
 
-Every access authentication validates JWT claims/signature and checks that its DB
-session/user are active. This enables immediate logout/revocation while keeping
-HTTP authentication stateless: no servlet sessions, form login or HTTP Basic.
+Access authentication validates JWT claims/signature without a session lookup.
+JWTs include `sub` (user ID), `email`, `exp`, and access tokens also include `role`.
+The frontend can decode these claims for display; the backend verifies them before
+trusting them. Logout does not invalidate issued access tokens: they remain usable
+until expiry (default 15 minutes). There are no servlet sessions, form login or HTTP Basic.
 There are no token cookies, so CSRF is disabled for these JSON/bearer endpoints.
 The Google flow additionally binds its ID token to a browser nonce cookie.
 See [token design](docs/token-design.md) for details.
@@ -142,6 +154,7 @@ See [token design](docs/token-design.md) for details.
 5. Set `GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com` and
    `GOOGLE_AUTH_ENABLED=true` in `.env`, then restart the backend.
 6. Set `CORS_ALLOWED_ORIGINS` to the same exact trusted frontend origins (comma-separated).
+7. Set the same Client ID as `VITE_GOOGLE_CLIENT_ID` in `frontend/.env.local`, then restart Vite.
 
 This is the Google Identity Services JavaScript ID-token flow. It needs a Client
 ID, not an API key or a client secret, and has no backend OAuth redirect URI.
@@ -192,14 +205,41 @@ Google setup references: [create a client ID](https://developers.google.com/iden
 
 ## Schema, architecture and operations
 
-V1 creates all 24 source ERD tables; V2 adds refresh_sessions for authentication.
+### Password recovery and frontend connection
+
+The frontend uses `/api/v1/auth` for registration, login, Google login, current
+user, refresh and logout. Vite proxies `/api/v1` to localhost:8080; production needs
+the same reverse proxy or an explicit `VITE_API_BASE_URL` plus backend CORS origins.
+The catalog/cart/profile/order modules still use their existing local adapters.
+
+Flyway V2 adds only `users.password_reset_hash` and `password_reset_expires_at`;
+V1 is unchanged. Reset links contain a random 256-bit token, stored only as SHA-256,
+expire after 15 minutes, and are consumed atomically with a user-row lock. A new
+link replaces the old link; requests for the same account have a 60-second cooldown.
+Unknown, disabled and Google-only accounts receive the same public response.
+Successful reset changes the BCrypt password and clears the refresh token.
+Existing access JWTs remain valid until their normal expiry.
+
+For local email testing, `docker compose up -d mailpit` starts SMTP on localhost:1025
+and the inbox at http://localhost:8025. It is optional and started separately.
+The application defaults target Mailpit. Production must set MAIL_HOST, MAIL_PORT,
+MAIL_USERNAME, MAIL_PASSWORD, MAIL_SMTP_AUTH, MAIL_STARTTLS and MAIL_FROM for the
+chosen SMTP provider. Set PASSWORD_RESET_URL to the frontend's trusted reset page;
+it must not contain a query or fragment. Tokens are appended in the URL fragment.
+Email delivery failures are logged without tokens and preserve the generic response.
+Password recovery defaults to disabled (`PASSWORD_RESET_ENABLED=false`). Set it
+to true only after local Mailpit or a real SMTP provider is ready; disabled recovery
+returns 503 without looking up accounts or sending mail.
+Apply gateway rate limits to login, forgot-password and reset-password endpoints.
+
+V1 creates all 24 source ERD tables and includes users.refresh_token for authentication.
 See [schema decisions](docs/schema-decisions.md) for the explicit SQL naming/type
 corrections and preserved cart/order key limits. Applied migrations must never be
 edited. Add a new version for changes; do not run clean, reset the volume or enable
 automatic baselining on an existing database to hide schema mismatches.
 
 The base package is com.nutee.backend. `auth` owns controllers/DTOs/services,
-provider links and refresh sessions; `user` owns the user entity/repository;
+provider links and refresh-token flows; `user` owns the user entity/repository;
 `security` owns token verification, BCrypt and CORS; `common` owns shared error
 and pagination DTOs; `config` owns OpenAPI. Transaction boundaries are in services,
 dependencies use constructor injection, and persistence entities stay out of APIs.
@@ -210,9 +250,9 @@ DB_POOL_MAX_SIZE / DB_POOL_MIN_IDLE. SERVER_PORT defaults to 8080. Deployments m
 provide database credentials and HMAC keys from a secret store; do not reuse test
 keys. API docs are disabled outside local. Configure HTTPS and rate limits at the
 deployment gateway before exposing login endpoints publicly. Compose is a local
-database setup bound to loopback. Expired/revoked session records can be purged by
-an operations job after the retention policy is chosen; validity checks do not
-depend on that cleanup. No initial admin or demo credentials are seeded.
+database setup bound to loopback. Refresh expiry is enforced from the signed JWT,
+so an expired value stored on a user cannot renew tokens. No initial admin or demo
+credentials are seeded.
 
 ## Build and tests
 
@@ -228,16 +268,15 @@ Test configuration uses non-production keys and never connects to the local DB.
 
 Coverage includes schema migration/JPA validation, FK integrity, BCrypt, registration,
 email/username login, duplicate identities, access/refresh key separation, invalid
-claims/signatures/algorithm, rotation, concurrent refresh, committed reuse revocation,
+claims/signatures/algorithm, rotation, concurrent refresh, rejection of stale tokens,
 logout, disabled users, absolute expiry, Google account creation/linking/nonce,
 Google RSA signature/claims validation, CORS, ProblemDetail, pagination and Swagger.
 Google verification tests use a trusted local test JWK server; actual Google login
 must be tested with your own configured Client ID and browser account.
 
-Verified on 2026-10-28 with `mvnw clean verify`: 17 unit/web tests and 21 integration
-tests passed (38 total; no failures, errors or skipped tests). Flyway V1/V2 were
-also applied to the local nutee database. Live HTTP registration, email login,
-profile, refresh and logout passed; the temporary test account was removed.
+The previous V1/V2 implementation was verified on 2026-10-28. Those results do not
+validate the current single-field refresh-token schema. Use the commands above to
+verify this implementation against isolated test databases.
 
 Executable JAR: `target/backend-0.0.1-SNAPSHOT.jar`. With environment variables set,
 run `java -jar target/backend-0.0.1-SNAPSHOT.jar` for deployment.

@@ -51,12 +51,16 @@ class NuteeApplicationIT {
     @Test
     void contextStartsWithJpaAndEntireErdSchema() {
         assertThat(entityManagerFactory.isOpen()).isTrue();
-        assertThat(entityManagerFactory.getMetamodel().getEntities()).hasSize(3);
+        assertThat(entityManagerFactory.getMetamodel().getEntities()).hasSize(2);
         assertThat(flyway.info().applied()).hasSize(2);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
-        assertThat(tables).hasSize(26).contains("flyway_schema_history", "users", "auth_providers",
-                "refresh_sessions", "orders", "order_items", "product_variants", "event_logs");
+        assertThat(tables).hasSize(25).contains("flyway_schema_history", "users", "auth_providers",
+                "orders", "order_items", "product_variants", "event_logs")
+                .doesNotContain("refresh_sessions");
+        assertThat(jdbc.queryForObject("SELECT data_type FROM information_schema.columns "
+                + "WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'refresh_token'",
+                String.class)).isEqualTo("text");
         flyway.validate();
     }
 

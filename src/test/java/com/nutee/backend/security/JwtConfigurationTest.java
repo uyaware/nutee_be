@@ -27,34 +27,36 @@ class JwtConfigurationTest {
 
     @BeforeEach
     void configure() {
-        tokens = new HmacTokenService(new JwtProperties("nutee-backend", "nutee-api", ACCESS, REFRESH),
+        tokens = new HmacTokenService(new JwtProperties(ACCESS, REFRESH),
                 new TokenProperties(Duration.ofMinutes(15), Duration.ofDays(7)));
         user = User.create("tester", "test@example.com", "hash", "Test", false, null);
     }
 
     @Test
     void issuesHs256TokensWithIndependentKeysAndClaims() {
-        UUID session = UUID.randomUUID();
-        var issued = tokens.issue(user, session, Instant.now().plus(Duration.ofDays(7)));
+        var issued = tokens.issue(user);
         var access = tokens.decodeAccess(issued.accessToken());
         var refresh = tokens.decodeRefresh(issued.refreshToken());
         assertThat(access.getHeaders().get("alg")).isEqualTo("HS256");
         assertThat(access.getSubject()).isEqualTo(user.getId().toString());
-        assertThat(access.getClaimAsString("sid")).isEqualTo(session.toString());
+        assertThat(access.getClaimAsString("email")).isEqualTo(user.getEmail());
+        assertThat(refresh.getClaimAsString("email")).isEqualTo(user.getEmail());
+        assertThat(refresh.getSubject()).isEqualTo(user.getId().toString());
+        assertThat(access.hasClaim("sid")).isFalse();
+        assertThat(access.hasClaim("iss")).isFalse();
+        assertThat(access.hasClaim("aud")).isFalse();
         assertThat(access.getClaimAsString("role")).isEqualTo("CUSTOMER");
         assertThat(refresh.getClaimAsString("token_type")).isEqualTo("refresh");
         assertThat(refresh.getId()).isNotEqualTo(access.getId());
         assertThat(issued.expiresIn()).isEqualTo(900);
-        assertThat(HmacTokenService.hash(issued.refreshToken())).hasSize(64);
+        assertThat(issued.refreshExpiresIn()).isEqualTo(Duration.ofDays(7).toSeconds());
         assertThatThrownBy(() -> tokens.decodeAccess(issued.refreshToken())).isInstanceOf(JwtException.class);
         assertThatThrownBy(() -> tokens.decodeRefresh(issued.accessToken())).isInstanceOf(JwtException.class);
     }
 
     @Test
-    void rejectsWrongIssuerAudienceExpiryTypeAndMissingRequiredClaims() throws Exception {
+    void rejectsExpiryTypeAndMissingRequiredClaims() throws Exception {
         for (String invalid : new String[]{
-                sign("other", "nutee-api", "access", Instant.now().plusSeconds(300), true),
-                sign("nutee-backend", "other-api", "access", Instant.now().plusSeconds(300), true),
                 sign("nutee-backend", "nutee-api", "access", Instant.now().minusSeconds(1), true),
                 sign("nutee-backend", "nutee-api", "refresh", Instant.now().plusSeconds(300), true),
                 sign("nutee-backend", "nutee-api", "access", Instant.now().plusSeconds(300), false)}) {
@@ -64,8 +66,8 @@ class JwtConfigurationTest {
 
     @Test
     void rejectsWrongSecretAndAlgorithm() throws Exception {
-        var issued = tokens.issue(user, UUID.randomUUID(), Instant.now().plusSeconds(300));
-        HmacTokenService other = new HmacTokenService(new JwtProperties("nutee-backend", "nutee-api", REFRESH, ACCESS),
+        var issued = tokens.issue(user, Instant.now().plusSeconds(300));
+        HmacTokenService other = new HmacTokenService(new JwtProperties(REFRESH, ACCESS),
                 new TokenProperties(Duration.ofMinutes(15), Duration.ofDays(7)));
         assertThatThrownBy(() -> other.decodeAccess(issued.accessToken())).isInstanceOf(JwtException.class);
         SignedJWT hs384 = new SignedJWT(new JWSHeader(JWSAlgorithm.HS384), new JWTClaimsSet.Builder()
@@ -80,10 +82,10 @@ class JwtConfigurationTest {
     void refusesWeakEqualAndMissingKeys() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            assertThat(validator.validate(new JwtProperties("issuer", "audience", ACCESS, REFRESH))).isEmpty();
-            assertThat(validator.validate(new JwtProperties("issuer", "audience", ACCESS, ACCESS))).isNotEmpty();
-            assertThat(validator.validate(new JwtProperties("issuer", "audience", "c2hvcnQ=", REFRESH))).isNotEmpty();
-            assertThat(validator.validate(new JwtProperties("issuer", "audience", null, null))).isNotEmpty();
+            assertThat(validator.validate(new JwtProperties(ACCESS, REFRESH))).isEmpty();
+            assertThat(validator.validate(new JwtProperties(ACCESS, ACCESS))).isNotEmpty();
+            assertThat(validator.validate(new JwtProperties("c2hvcnQ=", REFRESH))).isNotEmpty();
+            assertThat(validator.validate(new JwtProperties(null, null))).isNotEmpty();
         }
     }
 
@@ -92,7 +94,7 @@ class JwtConfigurationTest {
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder().issuer(issuer).audience(audience)
                 .subject(user.getId().toString()).expirationTime(Date.from(expiry))
                 .issueTime(Date.from(Instant.now())).claim("token_type", kind);
-        if (identifiers) { claims.jwtID(UUID.randomUUID().toString()).claim("sid", UUID.randomUUID().toString()); }
+        if (identifiers) { claims.jwtID(UUID.randomUUID().toString()); }
         SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims.build());
         jwt.sign(new MACSigner(Base64.getDecoder().decode(ACCESS)));
         return jwt.serialize();

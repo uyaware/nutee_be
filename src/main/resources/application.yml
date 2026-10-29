@@ -30,6 +30,17 @@ spring:
         max-page-size: 100
   jackson:
     time-zone: UTC
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:false}
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -65,13 +76,15 @@ springdoc:
 
 app:
   docs-enabled: false
+  password-reset:
+    enabled: ${PASSWORD_RESET_ENABLED:false}
+    url: ${PASSWORD_RESET_URL:http://localhost:5173/reset-password}
+    from: ${MAIL_FROM:no-reply@nutee.local}
   security:
     tokens:
       access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
       refresh-token-ttl: ${REFRESH_TOKEN_TTL:7d}
     jwt:
-      issuer: ${JWT_ISSUER:nutee-backend}
-      audience: ${JWT_AUDIENCE:nutee-api}
       access-secret: ${JWT_ACCESS_SECRET:}
       refresh-secret: ${JWT_REFRESH_SECRET:}
     google:
