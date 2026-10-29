@@ -2,7 +2,12 @@
 
 - Ưu tiên code đơn giản, rõ nghĩa và dễ sửa; áp dụng KISS, DRY, SOLID theo nhu cầu thực tế.
 - Nếu yêu cầu chưa rõ, hỏi người dùng trước khi mở rộng phạm vi; không tự suy đoán thêm chức năng.
-- Chỉ refactor backend. Frontend chỉ sửa khi cần khớp hợp đồng API đã thay đổi.
+- Phạm vi sửa theo yêu cầu hiện tại của người dùng; frontend tổ chức theo module.
+- Frontend gọi API thực tế qua `/api/v1`, không dùng service localStorage/sessionStorage
+  hoặc đồng bộ người dùng API sang dữ liệu trình duyệt. Khi bỏ service phải giữ HTML/JSX,
+  CSS, component, router và JS giao diện. Màn hình chưa có API giữ giao diện với dữ liệu rỗng;
+  không thay cả trang bằng placeholder, không giả lập lưu thành công hoặc tự thêm endpoint.
+  Mock HTTP chỉ dùng trong test.
 - Giữ `/api/v1`, cookie HttpOnly cho access/refresh token và các chức năng đang có.
 - Controller xử lý HTTP; service xử lý nghiệp vụ; repository truy cập dữ liệu.
 - Không tạo interface cho mọi service, lớp chuyển tiếp chỉ gọi một hàm, base class,

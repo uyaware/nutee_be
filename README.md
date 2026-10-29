@@ -159,6 +159,8 @@ See [token design](docs/token-design.md).
 
 ## Enable Google sign-in
 
+Hướng dẫn tiếng Việt: [cấu hình Google Auth và liên kết tài khoản](docs/google-auth.md).
+
 Google remains disabled until GOOGLE_AUTH_ENABLED=true and GOOGLE_CLIENT_ID is set.
 Use a Google OAuth Web Client ID and configure the exact frontend JavaScript origins.
 Set that same Client ID as VITE_GOOGLE_CLIENT_ID in frontend/.env.local and restart Vite.
@@ -183,7 +185,9 @@ frontend/API hosting. Google setup: [create a client ID](https://developers.goog
 The frontend uses `/api/v1/auth` for registration, login, Google login, current
 user, refresh and logout. Vite proxies `/api/v1` to localhost:8080; production needs
 the same reverse proxy or an explicit `VITE_API_BASE_URL` plus backend CORS origins.
-The catalog/cart/profile/order modules still use their existing local adapters.
+Frontend reads the current profile directly from /auth/me. Browser-storage services
+and seed data have been removed. Existing UI, styles and client-side interactions
+are preserved; screens without backend APIs use empty data and cannot simulate saves.
 
 Flyway V2 adds only `users.password_reset_hash` and `password_reset_expires_at`;
 V1 is unchanged. Reset links contain a random 256-bit token, stored only as SHA-256,
