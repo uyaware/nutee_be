@@ -6,9 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import jakarta.servlet.http.Cookie;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,7 +13,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -25,38 +24,34 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Transactional
+@Sql("/db/fixture/catalog.sql")
 class CatalogIT {
     @Container @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
     @Autowired JdbcTemplate jdbc;
     @Autowired MockMvc mvc;
 
-    @BeforeEach
-    void seedCatalog() throws Exception {
-        jdbc.execute(Files.readString(Path.of("scripts/seed-catalog.sql")));
-    }
-
     @Test
-    void seedIsIdempotentAndMatchesTheExistingSchema() throws Exception {
-        jdbc.execute(Files.readString(Path.of("scripts/seed-catalog.sql")));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(100);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(300);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM brands", Integer.class)).isEqualTo(12);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM categories", Integer.class)).isEqualTo(11);
-        assertThat(jdbc.queryForObject("""
-                SELECT count(*) FROM (SELECT product_id FROM product_variants
-                GROUP BY product_id HAVING count(*) NOT BETWEEN 1 AND 5) invalid
-                """, Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM product_images WHERE is_primary", Integer.class)).isEqualTo(100);
+    @Sql(statements = "SELECT 1")
+    void freshDatabaseHasNoSeedDataAndReturnsAnEmptyCatalog() throws Exception {
+        for (String table : new String[] {"products", "product_variants", "brands", "categories", "users"}) {
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM " + table, Integer.class)).isZero();
+        }
+        mvc.perform(get("/api/v1/products")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/v1/products/facets")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.brands.length()").value(0))
+                .andExpect(jsonPath("$.specifications.length()").value(0));
     }
 
     @Test
     void publicReadIgnoresAnExpiredCookieButDoesNotExposeAuthenticationOrAllowWrites() throws Exception {
         mvc.perform(get("/api/v1/products").cookie(new Cookie("accessToken", "invalid")))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(100))
-                .andExpect(jsonPath("$.content.length()").value(12));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.content.length()").value(3));
         mvc.perform(get("/api/v1/products/1/variants")).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].sku").value("NTSD0001V01"));
+                .andExpect(jsonPath("$[0].sku").value("TEST-LAPTOP-8"));
         mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", "invalid")))
                 .andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/products")).andExpect(status().isForbidden());
@@ -66,13 +61,17 @@ class CatalogIT {
     void filtersCategoriesRecursivelyAndValidatesSqlInputs() throws Exception {
         int root = jdbc.queryForObject("SELECT id FROM categories WHERE parent IS NULL", Integer.class);
         mvc.perform(get("/api/v1/products").param("category", String.valueOf(root)).param("size", "100"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(100));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3));
         mvc.perform(get("/api/v1/products").param("inStock", "true").param("sort", "price-asc"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(95));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
         mvc.perform(get("/api/v1/products").param("spec.ram", "8 GB"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(23));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
         mvc.perform(get("/api/v1/products").param("q", "16 GB"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(11));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/v1/products").param("brand", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+        mvc.perform(get("/api/v1/products").param("q", "ExampleTech"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
         mvc.perform(get("/api/v1/products").param("q", "' OR 1=1 --"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         mvc.perform(get("/api/v1/products").param("q", "%"))
@@ -85,18 +84,40 @@ class CatalogIT {
 
     @Test
     void hiddenProductsCannotBeReadAndReviewsAreNotInvented() throws Exception {
-        jdbc.update("UPDATE products SET is_published = false WHERE id = 1");
-        try {
-            mvc.perform(get("/api/v1/products/1")).andExpect(status().isNotFound());
-            mvc.perform(get("/api/v1/products/1/variants")).andExpect(status().isNotFound());
-            mvc.perform(get("/api/v1/products/1/reviews")).andExpect(status().isNotFound());
-        } finally {
-            jdbc.update("UPDATE products SET is_published = true WHERE id = 1");
-        }
-        mvc.perform(get("/api/v1/products/1/reviews")).andExpect(status().isOk())
+        mvc.perform(get("/api/v1/products/5")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/products/5/variants")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/products/5/reviews")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/products/4")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/products/3/reviews")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
-        mvc.perform(get("/api/v1/products").param("page", "999"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(8))
-                .andExpect(jsonPath("$.content.length()").value(4));
+        mvc.perform(get("/api/v1/products").param("page", "999").param("size", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.content.length()").value(1));
+    }
+
+    @Test
+    void specificationFiltersMustMatchTheSameVariant() throws Exception {
+        mvc.perform(get("/api/v1/products").param("spec.ram", "8 GB").param("spec.storage", "512 GB"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/v1/products").param("spec.ram", "16 GB").param("spec.storage", "512 GB"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/api/v1/products/1")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.brands.length()").value(1))
+                .andExpect(jsonPath("$.brands[0].name").value("ExampleTech"))
+                .andExpect(jsonPath("$.specifications.length()").value(4));
+        mvc.perform(get("/api/v1/products/facets")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.specifications.length()").value(3));
+    }
+
+    @Test
+    void reviewsFollowOrderItemsAndReturnTheLatestRevisionOnce() throws Exception {
+        mvc.perform(get("/api/v1/products/1")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.reviewCount").value(1));
+        mvc.perform(get("/api/v1/products/1/reviews")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].rating").value(5))
+                .andExpect(jsonPath("$.content[0].comment").value("Updated review"))
+                .andExpect(jsonPath("$.content[0].authorName").value("Test reviewer"))
+                .andExpect(jsonPath("$.content[0].email").doesNotExist());
     }
 }

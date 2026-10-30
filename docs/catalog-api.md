@@ -1,40 +1,15 @@
-# Catalog API và seed
+# Catalog API
 
-Catalog đọc trực tiếp schema hiện có, không sửa Flyway V1/V2 và không tạo bảng song song.
-Controller xử lý HTTP; service xử lý phân trang/404; repository dùng SQL bind parameter.
-Các quan hệ được tải theo lô, không tạo truy vấn cho từng sản phẩm trong một trang.
+Catalog follows the reset schema from the updated ERD. The old seed SQL and
+PowerShell runner have been removed; no demo products are loaded into the local
+database. A new database returns an empty catalog until real products are added.
 
-## Seed
-
-Từ thư mục backend, khi PostgreSQL của Compose đã chạy:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/seed-catalog.ps1
-```
-
-Script đọc `.env` hiện có, copy SQL nguyên byte vào container rồi chạy bằng `psql`
-với `ON_ERROR_STOP=1`. Toàn bộ seed nằm trong transaction và có advisory lock.
-Seed không chạy tự động trong production hoặc Flyway.
-
-| Dữ liệu seed | Số lượng |
-| --- | --- |
-| Sản phẩm công khai | 100 |
-| Variants | 300; mỗi sản phẩm 1–5 variants |
-| Brand | 12 |
-| Category | 11; gồm danh mục cha và con |
-| Ảnh | 200; mỗi sản phẩm 1 ảnh chính và 1 ảnh tổng quan |
-
-SKU seed dùng tiền tố `NTSD`, tối đa 11 ký tự, phù hợp `VARCHAR(16)`.
-Chạy lại nhận diện sản phẩm qua SKU đầu tiên, không tạo trùng và không đặt lại giá/tồn kho.
-Brand/category hiện có được dùng lại theo tên và quan hệ cha. Không xóa user, order hay dữ liệu khác.
-
-Tên, giá và thông số là dữ liệu mẫu minh họa. Ảnh tham chiếu các SVG đã có trong frontend.
-Không tạo review, đơn hàng hoặc số lượt bán giả; rating/sold_count ban đầu là 0.
-5 sản phẩm hết hàng để kiểm tra trạng thái hết kho; 95 sản phẩm còn hàng.
-
-Schema variant hiện chỉ có `product_id`, `sku`, `price`, `quantity` và timestamps.
-API giữ nguyên cấu trúc này; thông số nằm ở cấp sản phẩm trong `product_specifications`,
-không tự thêm bảng/cột thuộc tính variant ngoài ERD.
+Each product has one optional brand via `products.brand_id`. The public `brands`
+array is retained and contains zero or one entry. Specifications come from
+`variant_specifications`, and the product response aggregates distinct values
+from its valid variants. All selected specification filters must match the same
+variant. Reviews resolve their product through the purchased order item and
+variant, and only their latest history entry is returned.
 
 ## API đọc công khai
 
@@ -117,7 +92,8 @@ mvn.cmd test
 mvn.cmd '-Dtest=CatalogIT' test
 ```
 
-`CatalogIT` dùng PostgreSQL Testcontainers riêng và script seed thật: kiểm tra seed
-idempotent, 1–5 variants, tìm kiếm/lọc, phân trang, chặn sản phẩm ẩn và giữ bảo mật các API khác.
-Đã kiểm tra thêm frontend với backend/DB thật khi browser storage bị chặn, gồm tìm SKU,
-lọc kết hợp, chọn variant cập nhật giá/tồn kho và giao diện mobile.
+`CatalogIT` uses PostgreSQL Testcontainers with small synthetic test fixtures
+in `src/test/resources/db/fixture/catalog.sql`. Every fixture transaction rolls
+back. Tests cover empty databases, direct brand lookup, same-variant specification
+filters, review/order-item joins, pagination, hidden products and API security.
+The fixtures are not application seed data and never run during normal startup.

@@ -68,15 +68,17 @@ public class CatalogRepository {
                 (rs, row) -> new Category(rs.getInt("id"), rs.getObject("parent", Integer.class), rs.getString("name")));
     }
 
-    /** Tập giá trị thông số của các sản phẩm công khai. */
+    /** Tập giá trị thông số từ các biến thể hợp lệ của sản phẩm công khai. */
     public List<SpecificationFacet> specificationFacets() {
         Map<String, List<String>> values = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT DISTINCT s.specification_name, s.specification_value
-                FROM product_specifications s JOIN products p ON p.id = s.product_id
+                FROM variant_specifications s
+                JOIN product_variants v ON v.id = s.variant_id
+                JOIN products p ON p.id = v.product_id
                 WHERE p.is_published = true AND s.specification_name <> 'kind'
                   AND s.specification_name IS NOT NULL AND s.specification_value IS NOT NULL
-                  AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.price >= 0 AND v.quantity >= 0)
+                  AND v.price >= 0 AND v.quantity >= 0
                 ORDER BY s.specification_name, s.specification_value
                 """, new MapSqlParameterSource(), rs -> {
                     values.computeIfAbsent(rs.getString(1), key -> new ArrayList<>()).add(rs.getString(2));
@@ -87,7 +89,10 @@ public class CatalogRepository {
     /** Mỗi review chỉ được đếm một lần dù có nhiều lịch sử sửa. */
     public long reviewCount(int productId) {
         return jdbc.queryForObject("""
-                SELECT count(*) FROM reviews r WHERE r.product_id = :id
+                SELECT count(*) FROM reviews r
+                JOIN order_items item ON item.id = r.order_item_id
+                JOIN product_variants v ON v.id = item.variant_id
+                WHERE v.product_id = :id
                 AND EXISTS (SELECT 1 FROM review_histories h WHERE h.review_id = r.id)
                 """, Map.of("id", productId), Long.class);
     }
@@ -98,10 +103,12 @@ public class CatalogRepository {
                 SELECT r.id, coalesce(nullif(trim(u.full_name), ''), u.username) AS author,
                        h.rating, h.comment, h.created_at
                 FROM reviews r
+                JOIN order_items item ON item.id = r.order_item_id
+                JOIN product_variants v ON v.id = item.variant_id
                 JOIN LATERAL (SELECT * FROM review_histories rh WHERE rh.review_id = r.id
                               ORDER BY rh.created_at DESC, rh.id DESC LIMIT 1) h ON true
                 JOIN users u ON u.id = h.user_id
-                WHERE r.product_id = :id ORDER BY h.created_at DESC, r.id DESC LIMIT :limit OFFSET :offset
+                WHERE v.product_id = :id ORDER BY h.created_at DESC, r.id DESC LIMIT :limit OFFSET :offset
                 """, new MapSqlParameterSource("id", productId).addValue("limit", size).addValue("offset", (long) page * size),
                 (rs, row) -> new Review(rs.getInt("id"), rs.getString("author"), rs.getInt("rating"),
                         rs.getString("comment"), rs.getTimestamp("created_at").toInstant()));
@@ -112,7 +119,10 @@ public class CatalogRepository {
         return """
                 SELECT p.id, p.name, p.description, coalesce(p.avg_rating, 0) AS avg_rating,
                   coalesce(p.sold_count, 0) AS sold_count, p.updated_at, offer.price, offer.max_price, offer.stock,
-                  (SELECT count(*) FROM reviews r WHERE r.product_id = p.id
+                  (SELECT count(*) FROM reviews r
+                   JOIN order_items item ON item.id = r.order_item_id
+                   JOIN product_variants v ON v.id = item.variant_id
+                   WHERE v.product_id = p.id
                    AND EXISTS (SELECT 1 FROM review_histories h WHERE h.review_id = r.id)) AS review_count
                 """;
     }
@@ -131,9 +141,10 @@ public class CatalogRepository {
         if (!filter.q().isBlank()) sql.append("""
                  AND (p.name ILIKE :q ESCAPE '\\' OR p.description ILIKE :q ESCAPE '\\'
                    OR EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND v.sku ILIKE :q ESCAPE '\\')
-                   OR EXISTS (SELECT 1 FROM product_specifications s WHERE s.product_id = p.id AND s.specification_value ILIKE :q ESCAPE '\\')
-                   OR EXISTS (SELECT 1 FROM product_brands pb JOIN brands b ON b.id = pb.brand_id
-                              WHERE pb.product_id = p.id AND b.name ILIKE :q ESCAPE '\\'))
+                   OR EXISTS (SELECT 1 FROM variant_specifications s JOIN product_variants v ON v.id = s.variant_id
+                              WHERE v.product_id = p.id AND v.price >= 0 AND v.quantity >= 0
+                                AND s.specification_value ILIKE :q ESCAPE '\\')
+                   OR EXISTS (SELECT 1 FROM brands b WHERE b.id = p.brand_id AND b.name ILIKE :q ESCAPE '\\'))
                 """);
         if (filter.category() != null) sql.append("""
                  AND EXISTS (WITH RECURSIVE tree(id) AS (
@@ -141,16 +152,21 @@ public class CatalogRepository {
                    UNION SELECT c.id FROM categories c JOIN tree t ON c.parent = t.id
                  ) SELECT 1 FROM product_categories pc JOIN tree t ON t.id = pc.cat_id WHERE pc.product_id = p.id)
                 """);
-        if (!filter.brands().isEmpty()) sql.append(" AND EXISTS (SELECT 1 FROM product_brands pb WHERE pb.product_id = p.id AND pb.brand_id IN (:brands))");
+        if (!filter.brands().isEmpty()) sql.append(" AND p.brand_id IN (:brands)");
         if (filter.minPrice() != null) sql.append(" AND offer.price >= :min");
         if (filter.maxPrice() != null) sql.append(" AND offer.price <= :max");
         if (filter.inStock()) sql.append(" AND offer.stock > 0");
-        int index = 0;
-        for (var entry : filter.specifications().entrySet()) {
-            String key = "spec" + index++;
-            sql.append(" AND EXISTS (SELECT 1 FROM product_specifications s WHERE s.product_id = p.id AND s.specification_name = :")
-                    .append(key).append("Name AND s.specification_value IN (:").append(key).append("Values))");
-            params.addValue(key + "Name", entry.getKey()).addValue(key + "Values", entry.getValue());
+        if (!filter.specifications().isEmpty()) {
+            sql.append(" AND EXISTS (SELECT 1 FROM product_variants selected_variant WHERE selected_variant.product_id = p.id")
+                    .append(" AND selected_variant.price >= 0 AND selected_variant.quantity >= 0");
+            int index = 0;
+            for (var entry : filter.specifications().entrySet()) {
+                String key = "spec" + index++;
+                sql.append(" AND EXISTS (SELECT 1 FROM variant_specifications s WHERE s.variant_id = selected_variant.id AND s.specification_name = :")
+                        .append(key).append("Name AND s.specification_value IN (:").append(key).append("Values))");
+                params.addValue(key + "Name", entry.getKey()).addValue(key + "Values", entry.getValue());
+            }
+            sql.append(")");
         }
         return sql.toString();
     }
@@ -167,11 +183,16 @@ public class CatalogRepository {
         Map<Integer, List<Specification>> specifications = new HashMap<>();
         Map<Integer, List<Variant>> variants = new HashMap<>();
         Map<Integer, List<Image>> images = new HashMap<>();
-        jdbc.query("SELECT pb.product_id, b.* FROM product_brands pb JOIN brands b ON b.id = pb.brand_id WHERE pb.product_id IN (:ids) ORDER BY b.id", ids,
+        jdbc.query("SELECT p.id AS product_id, b.* FROM products p JOIN brands b ON b.id = p.brand_id WHERE p.id IN (:ids) ORDER BY b.id", ids,
                 rs -> { brands.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Brand(rs.getInt("id"), rs.getString("name"))); });
         jdbc.query("SELECT pc.product_id, c.* FROM product_categories pc JOIN categories c ON c.id = pc.cat_id WHERE pc.product_id IN (:ids) ORDER BY c.id", ids,
                 rs -> { categories.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Category(rs.getInt("id"), rs.getObject("parent", Integer.class), rs.getString("name"))); });
-        jdbc.query("SELECT * FROM product_specifications WHERE product_id IN (:ids) AND specification_name IS NOT NULL AND specification_value IS NOT NULL ORDER BY id", ids,
+        jdbc.query("""
+                SELECT DISTINCT v.product_id, s.specification_name, s.specification_value
+                FROM variant_specifications s JOIN product_variants v ON v.id = s.variant_id
+                WHERE v.product_id IN (:ids) AND v.price >= 0 AND v.quantity >= 0
+                ORDER BY v.product_id, s.specification_name, s.specification_value
+                """, ids,
                 rs -> { specifications.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Specification(rs.getString("specification_name"), rs.getString("specification_value"))); });
         jdbc.query("SELECT * FROM product_variants WHERE product_id IN (:ids) AND price >= 0 AND quantity >= 0 ORDER BY price, id", ids,
                 rs -> { variants.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Variant(rs.getInt("id"), rs.getString("sku"), rs.getInt("price"), rs.getInt("quantity"))); });

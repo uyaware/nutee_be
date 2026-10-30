@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import jakarta.persistence.EntityManagerFactory;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -14,16 +15,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = {
-        "springdoc.api-docs.enabled=true", "springdoc.swagger-ui.enabled=true", "app.docs-enabled=true"})
+        "springdoc.api-docs.enabled=true", "springdoc.swagger-ui.enabled=true", "app.docs-enabled=true",
+        "management.health.mail.enabled=false"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -52,16 +57,25 @@ class NuteeApplicationIT {
     void contextStartsWithJpaAndEntireErdSchema() {
         assertThat(entityManagerFactory.isOpen()).isTrue();
         assertThat(entityManagerFactory.getMetamodel().getEntities()).hasSize(2);
-        assertThat(flyway.info().applied()).hasSize(2);
+        assertThat(flyway.info().applied()).hasSize(3);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
-        assertThat(tables).hasSize(25).contains("flyway_schema_history", "users", "auth_providers",
-                "orders", "order_items", "product_variants", "event_logs")
-                .doesNotContain("refresh_sessions");
+        assertThat(tables).hasSize(24).contains("flyway_schema_history", "users", "auth_providers",
+                "orders", "order_items", "product_variants", "event_logs",
+                "variant_specifications")
+                .doesNotContain("refresh_sessions", "product_brands", "product_specifications", "variant_images");
         assertThat(jdbc.queryForObject("SELECT data_type FROM information_schema.columns "
                 + "WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'refresh_token'",
                 String.class)).isEqualTo("text");
         flyway.validate();
+        assertThat(flyway.migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    @Transactional
+    @Sql("/db/fixture/catalog.sql")
+    void schemaEnforcesProductOwnershipAndPurchaseRelationships() throws Exception {
+        jdbc.execute(new ClassPathResource("db/schema-contract.sql").getContentAsString(StandardCharsets.UTF_8));
     }
 
     @Test

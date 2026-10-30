@@ -1,12 +1,16 @@
 # Flyway migrations
 
-V1 implements all 24 tables from the supplied ERD, including the nullable TEXT
-column users.refresh_token. There is no separate refresh-session table.
-V2__add_password_reset.sql adds the reset-token hash and expiry fields to users.
-See docs/schema-decisions.md for naming, type fixes and preserved business limits.
-Hibernate only validates.
+The user explicitly requested a fresh baseline from the updated ERD and dropped
+the previous local database and catalog seed data.
 
-The user requested removing the earlier V2__create_refresh_sessions.sql and folding the single refresh-token
-field into V1. Databases that already applied the previous V1/V2 require explicit
-schema and Flyway-history reconciliation before this version can start. Do not
-erase existing data or change migration history automatically.
+1. `V1__init_schema.sql`: all 23 tables, columns, SERIAL sequences and defaults.
+2. `V2__add_constraints.sql`: PK, FK, UNIQUE, CHECK and explicit NOT NULL constraints.
+3. `V3__create_indexes.sql`: explicit lookup, expression and partial unique indexes.
+
+Authentication refresh-token/password-reset fields remain in V1 for compatibility.
+No seed INSERTs or legacy backfills are included. Hibernate only validates.
+
+This chain requires an empty database. Existing databases using the old chain
+need a deliberate reset or a separate data migration; do not repair/baseline away
+checksum mismatches. Future changes must be new immutable versions.
+See `docs/schema-decisions.md` for the source ERD and typing/relationship decisions.

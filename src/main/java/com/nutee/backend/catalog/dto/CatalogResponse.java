@@ -13,7 +13,7 @@ public final class CatalogResponse {
     public record Brand(int id, String name) {}
     /** Danh mục với parentId null khi là gốc. */
     public record Category(int id, Integer parentId, String name) {}
-    /** Thông số ở cấp sản phẩm. */
+    /** Giá trị thông số biến thể, được tổng hợp khi đọc sản phẩm. */
     public record Specification(String name, String value) {}
     /** Biến thể có SKU, giá và tồn kho riêng theo schema hiện có. */
     public record Variant(int id, String sku, int price, int quantity) {}

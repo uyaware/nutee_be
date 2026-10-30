@@ -36,12 +36,23 @@ Never overwrite `.env` with the template after initialization: that would replac
 configuration needed by the existing database. Changing POSTGRES_PASSWORD does not
 change an already initialized PostgreSQL role's password.
 
-The application automatically applies Flyway V1/V2 before JPA validates its
-mappings (`ddl-auto: validate`). It does not use Hibernate to create tables.
-V1 includes `users.refresh_token`; the earlier V2 refresh-session migration was
-removed. Existing databases that applied the old V1/V2 need an explicit schema
-and Flyway-history reconciliation before startup; this source change does not
-reset or modify existing database data.
+The application applies three Flyway migrations before JPA validates its mappings:
+`V1__init_schema.sql`, `V2__add_constraints.sql`, and `V3__create_indexes.sql`.
+This fresh baseline follows the updated ERD. The old local database and catalog
+seed were explicitly removed; create an empty database before restarting the API.
+No catalog data is seeded. Existing deployments of the previous migration chain
+need a deliberate reset or a separate data migration; do not bypass validation.
+
+The database currently remains dropped. With the existing Compose volume, create
+it explicitly when ready, then start the API to apply the new migrations:
+
+```powershell
+docker compose exec -T postgres psql -U nutee -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE nutee OWNER nutee;'
+.\scripts\run-local.ps1
+```
+
+`init-local.ps1` reuses an existing volume; it does not recreate a manually dropped
+database inside that volume.
 
 | URL | Purpose |
 | --- | --- |
@@ -212,11 +223,11 @@ to true only after local Mailpit or a real SMTP provider is ready; disabled reco
 returns 503 without looking up accounts or sending mail.
 Apply gateway rate limits to login, forgot-password and reset-password endpoints.
 
-V1 creates all 24 source ERD tables and includes users.refresh_token for authentication.
-See [schema decisions](docs/schema-decisions.md) for the explicit SQL naming/type
-corrections and preserved cart/order key limits. Applied migrations must never be
-edited. Add a new version for changes; do not run clean, reset the volume or enable
-automatic baselining on an existing database to hide schema mismatches.
+The baseline creates all 23 tables from the updated ERD. Schema creation,
+constraints, and explicit indexes are separated into V1/V2/V3. Existing
+refresh-token/password-reset fields remain for authentication compatibility.
+See [schema decisions](docs/schema-decisions.md) for typing corrections and the
+reset boundary. Future applied migrations must remain immutable; add new versions.
 
 The base package is com.nutee.backend. `auth` owns controllers/DTOs/services,
 provider links and refresh-token flows; `user` owns the user entity/repository;
@@ -254,9 +265,9 @@ Google RSA signature/claims validation, CORS, ProblemDetail, pagination and Swag
 Google verification tests use a trusted local test JWK server; actual Google login
 must be tested with your own configured Client ID and browser account.
 
-The previous V1/V2 implementation was verified on 2026-10-28. Those results do not
-validate the current single-field refresh-token schema. Use the commands above to
-verify this implementation against isolated test databases.
+Catalog integration tests use isolated transaction-scoped fixtures, not a
+production seed script. Schema integration checks cover the new order/variant
+relationships and verify that a fresh database starts empty.
 
 Executable JAR: `target/backend-0.0.1-SNAPSHOT.jar`. With environment variables set,
 run `java -jar target/backend-0.0.1-SNAPSHOT.jar` for deployment.

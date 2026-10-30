@@ -299,16 +299,6 @@ class AuthFlowIT {
                 .andExpect(status().isForbidden());
     }
 
-    @Test
-    void schemaRejectsMismatchedProductAndSku() {
-        int product = jdbc.queryForObject("INSERT INTO products (name) VALUES ('first') RETURNING id", Integer.class);
-        int other = jdbc.queryForObject("INSERT INTO products (name) VALUES ('second') RETURNING id", Integer.class);
-        String sku = UUID.randomUUID().toString().substring(0, 16);
-        jdbc.update("INSERT INTO product_variants (product_id, sku) VALUES (?, ?)", product, sku);
-        assertThatThrownBy(() -> jdbc.update("INSERT INTO reviews (product_id, sku) VALUES (?, ?)", other, sku))
-                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-    }
-
     private JsonNode register(String username) throws Exception {
         var response = mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("username", username, "email", username + "@example.com",
