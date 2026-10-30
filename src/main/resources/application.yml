@@ -30,6 +30,8 @@ spring:
         max-page-size: 100
   jackson:
     time-zone: UTC
+    deserialization:
+      accept-float-as-int: false
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}

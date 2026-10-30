@@ -130,6 +130,9 @@ Business persistence now uses Spring Data JPA for the commerce entities as well
 as users/provider identities. Associations are LAZY and related rows are loaded
 in batches after pagination. Entity mappings validate against this unchanged
 Flyway baseline; no migration/data reset was needed for the JPA conversion.
+The cart API also reuses this baseline: a JPA `CartItem` maps the existing table,
+and account-row locking serializes cart writes without adding version columns.
+See [Cart API](cart-api.md) for quantity, ownership and current-price behavior.
 
 Run the suite using JDK 21 and Docker with PostgreSQL 16 containers:
 

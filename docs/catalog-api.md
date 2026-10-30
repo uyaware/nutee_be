@@ -72,8 +72,8 @@ latest-review projection, grouped review counts and distinct specification facet
 each method documents why a derived query is insufficient. Purchase-price
 snapshots remain unchanged.
 
-The JPA model includes the existing user/provider entities and nine commerce
-entities needed by these reads. `order.item.entity.OrderItem` is mapped so review
+The JPA model includes the existing user/provider entities and ten commerce
+entities used by catalog and cart. `order.item.entity.OrderItem` is mapped so review
 queries can traverse the purchase relationship; it does not add order mutation
 APIs. Existing Flyway migrations and the seed SQL are unchanged. Hibernate remains
 in `ddl-auto: validate`; JPA does not create or alter tables.
@@ -183,7 +183,8 @@ Trang chủ, danh sách, tìm kiếm, bộ lọc, ảnh, breadcrumb và chi ti�
 `src/modules/catalog/api/catalogService.ts` qua HTTP client chung.
 Chọn variant đổi giá và giới hạn quantity theo dữ liệu API. Không dùng localStorage,
 không fallback sang seed frontend hoặc dữ liệu rỗng khi API lỗi.
-Các màn hình chưa có API quản trị/cart/order vẫn giữ UI và trạng thái rỗng.
+Cart đã có API theo variant; xem [Cart API](cart-api.md). Các màn hình chưa có
+API quản trị/order vẫn giữ UI và trạng thái rỗng.
 
 ## Kiểm tra
 

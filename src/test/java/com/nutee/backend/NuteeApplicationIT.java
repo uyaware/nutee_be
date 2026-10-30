@@ -59,7 +59,7 @@ class NuteeApplicationIT {
         assertThat(entityManagerFactory.getMetamodel().getEntities()).extracting(entity -> entity.getName())
                 .containsExactlyInAnyOrder("User", "AuthProvider", "Brand", "Category", "Product",
                         "ProductVariant", "ProductImage", "VariantSpecification", "OrderItem",
-                        "ProductReview", "ProductReviewHistory");
+                        "ProductReview", "ProductReviewHistory", "CartItem");
         assertThat(flyway.info().applied()).hasSize(3);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
