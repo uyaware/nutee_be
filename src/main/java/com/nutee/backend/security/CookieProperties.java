@@ -11,5 +11,7 @@ import org.springframework.validation.annotation.Validated;
 public record CookieProperties(boolean secure, @Pattern(regexp = "Strict|Lax|None") String sameSite) {
     /** Chỉ cho dùng SameSite=None khi cookie cũng có Secure. */
     @AssertTrue(message = "SameSite=None requires secure cookies and HTTPS")
-    public boolean isSameSiteValid() { return !"None".equals(sameSite) || secure; }
+    public boolean isSameSiteValid() {
+        return !"None".equals(sameSite) || secure;
+    }
 }

@@ -46,7 +46,6 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         write(request, response, HttpStatus.FORBIDDEN, "You do not have permission to access this resource.");
     }
 
-    /** Ghi lỗi HTTP thống nhất cùng đường dẫn và thời điểm xảy ra lỗi. */
     private void write(HttpServletRequest request, HttpServletResponse response,
             HttpStatus status, String detail) throws IOException {
         response.setStatus(status.value());

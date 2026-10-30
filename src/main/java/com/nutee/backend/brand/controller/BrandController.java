@@ -18,11 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class BrandController {
     private final BrandService service;
 
-    /** Danh sách thương hiệu. */
     @GetMapping
-    public List<BrandResponse> brands() { return service.list(); }
+    public List<BrandResponse> brands() {
+        return service.list();
+    }
 
-    /** Chi tiết thương hiệu theo ID. */
     @GetMapping("/{id}")
-    public BrandResponse brand(@PathVariable int id) { return service.get(id); }
+    public BrandResponse brand(@PathVariable int id) {
+        return service.get(id);
+    }
 }

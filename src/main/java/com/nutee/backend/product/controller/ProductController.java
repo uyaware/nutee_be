@@ -25,25 +25,26 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
     private final ProductService service;
 
-    /** Danh sách sản phẩm có tìm kiếm, lọc và phân trang. */
     @GetMapping
     public PageResponse<ProductResponse> products(@RequestParam MultiValueMap<String, String> query) {
         return service.list(ProductFilter.from(query));
     }
 
-    /** Chi tiết gồm ảnh, thông số, thương hiệu, danh mục và biến thể. */
     @GetMapping("/{id}")
-    public ProductResponse product(@PathVariable int id) { return service.get(id); }
+    public ProductResponse product(@PathVariable int id) {
+        return service.get(id);
+    }
 
-    /** Biến thể thuộc một sản phẩm công khai. */
     @GetMapping("/{id}/variants")
-    public List<ProductVariantResponse> variants(@PathVariable int id) { return service.variants(id); }
+    public List<ProductVariantResponse> variants(@PathVariable int id) {
+        return service.variants(id);
+    }
 
-    /** Giá trị dựng bộ lọc sản phẩm. */
     @GetMapping("/facets")
-    public ProductFacetsResponse facets() { return service.facets(); }
+    public ProductFacetsResponse facets() {
+        return service.facets();
+    }
 
-    /** Đánh giá của sản phẩm có phân trang. */
     @GetMapping("/{id}/reviews")
     public PageResponse<ProductReviewResponse> reviews(@PathVariable int id,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {

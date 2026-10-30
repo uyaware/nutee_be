@@ -4,11 +4,11 @@ import com.nutee.backend.category.dto.CategoryResponse;
 import com.nutee.backend.category.entity.Category;
 import com.nutee.backend.category.repository.CategoryRepository;
 import com.nutee.backend.common.exception.ApiException;
-import java.util.List;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
@@ -23,12 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class CategoryService {
     private final CategoryRepository repository;
 
-    /** Trả danh sách danh mục công khai. */
     public List<CategoryResponse> list() {
         return repository.findAll(Sort.by("id")).stream().map(this::response).toList();
     }
 
-    /** Trả danh mục theo ID hoặc lỗi 404. */
     public CategoryResponse get(int id) {
         return repository.findById(id).map(this::response)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Category not found."));
@@ -53,7 +51,9 @@ public class CategoryService {
         pending.add(id);
         while (!pending.isEmpty()) {
             int current = pending.removeFirst();
-            if (result.add(current)) pending.addAll(children.getOrDefault(current, List.of()));
+            if (result.add(current)) {
+                pending.addAll(children.getOrDefault(current, List.of()));
+            }
         }
         return result;
     }

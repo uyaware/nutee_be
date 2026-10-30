@@ -16,12 +16,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findLockedById(UUID id);
 
-    /** Tìm tài khoản theo email, không phân biệt hoa thường. */
     Optional<User> findByEmailIgnoreCase(String email);
-    /** Tìm tài khoản theo username, không phân biệt hoa thường. */
     Optional<User> findByUsernameIgnoreCase(String username);
-    /** Kiểm tra email đã được đăng ký hay chưa. */
     boolean existsByEmailIgnoreCase(String email);
-    /** Kiểm tra username đã được sử dụng hay chưa. */
     boolean existsByUsernameIgnoreCase(String username);
 }

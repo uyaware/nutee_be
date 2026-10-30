@@ -86,7 +86,6 @@ public class AuthController {
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
-    /** Trả thông tin người dùng từ access cookie đã được filter xác thực. */
     @GetMapping("/me")
     public ResponseEntity<UserResponse> me(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())

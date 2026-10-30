@@ -37,5 +37,7 @@ public record JwtProperties(
 
     /** Che các khóa ký khi cấu hình được ghi vào log. */
     @Override
-    public String toString() { return "JwtProperties[secrets=REDACTED]"; }
+    public String toString() {
+        return "JwtProperties[secrets=REDACTED]";
+    }
 }

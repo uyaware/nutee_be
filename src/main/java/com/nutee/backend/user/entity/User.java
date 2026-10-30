@@ -64,12 +64,10 @@ public class User {
         return user;
     }
 
-    /** Đánh dấu email đã được xác minh từ danh tính provider hợp lệ. */
     public void verifyEmail() {
         emailVerified = true;
     }
 
-    /** Thay refresh token hiện tại hoặc xóa token khi đăng xuất. */
     public void replaceRefreshToken(String token) {
         refreshToken = token;
     }
@@ -88,13 +86,11 @@ public class User {
         passwordResetExpiresAt = null;
     }
 
-    /** Gán thời điểm tạo/cập nhật khi tài khoản được lưu lần đầu. */
     @PrePersist
     void initializeTimestamps() {
         createdAt = updatedAt = Instant.now();
     }
 
-    /** Cập nhật mốc thời gian khi thông tin tài khoản thay đổi. */
     @PreUpdate
     void updateTimestamp() {
         updatedAt = Instant.now();

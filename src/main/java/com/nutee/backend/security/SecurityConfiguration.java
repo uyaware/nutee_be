@@ -78,7 +78,6 @@ public class SecurityConfiguration {
         return http.build();
     }
 
-    /** Cung cấp bộ giải mã access JWT trực tiếp từ dịch vụ token, không qua lớp cấu hình trung gian. */
     @Bean
     JwtDecoder jwtDecoder(HmacTokenService tokens) {
         return tokens::decodeAccess;
@@ -93,7 +92,6 @@ public class SecurityConfiguration {
         return repository;
     }
 
-    /** Dùng BCrypt để băm và đối chiếu mật khẩu. */
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);

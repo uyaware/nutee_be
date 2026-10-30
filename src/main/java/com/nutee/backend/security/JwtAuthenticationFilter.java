@@ -32,7 +32,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if ("GET".equals(request.getMethod()) && (path.equals("/api/v1/products")
                 || path.startsWith("/api/v1/products/") || path.equals("/api/v1/categories")
                 || path.startsWith("/api/v1/categories/") || path.equals("/api/v1/brands")
-                || path.startsWith("/api/v1/brands/"))) return true;
+                || path.startsWith("/api/v1/brands/"))) {
+            return true;
+        }
         return "OPTIONS".equals(request.getMethod()) || PUBLIC_AUTH.contains(path)
                 || path.matches("/api/v1/auth/social/[^/]+(?:/nonce)?")
                 || path.startsWith("/api/v1/actuator/")

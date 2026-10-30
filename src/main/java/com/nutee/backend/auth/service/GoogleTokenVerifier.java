@@ -38,14 +38,16 @@ public class GoogleTokenVerifier implements SocialLoginProvider {
                     ? OAuth2TokenValidatorResult.success()
                     : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token")));
             decoder = google;
-        } else { decoder = null; }
+        } else {
+            decoder = null;
+        }
     }
 
-    /** Mã lưu liên kết tài khoản Google trong cơ sở dữ liệu. */
     @Override
-    public String name() { return "GOOGLE"; }
+    public String name() {
+        return "GOOGLE";
+    }
 
-    /** Từ chối đăng nhập Google khi tính năng chưa được cấu hình và bật. */
     @Override
     public void requireEnabled() {
         if (!properties.enabled()) {
@@ -64,7 +66,9 @@ public class GoogleTokenVerifier implements SocialLoginProvider {
                 throw new BadCredentialsException("Invalid Google nonce.");
             }
             String name = jwt.getClaimAsString("name");
-            if (name != null && name.length() > 100) { name = name.substring(0, 100); }
+            if (name != null && name.length() > 100) {
+                name = name.substring(0, 100);
+            }
             return new SocialIdentity(jwt.getSubject(), jwt.getClaimAsString("email"), name,
                     jwt.getClaimAsString("picture"));
         } catch (JwtException | IllegalArgumentException exception) {
@@ -87,6 +91,9 @@ public class GoogleTokenVerifier implements SocialLoginProvider {
                     && jwt.getExpiresAt() != null && jwt.getExpiresAt().isAfter(Instant.now())
                     && jwt.getIssuedAt() != null && !jwt.getIssuedAt().isAfter(Instant.now().plusSeconds(30))
                     && (jwt.getNotBefore() == null || !jwt.getNotBefore().isAfter(Instant.now()));
-        } catch (RuntimeException exception) { return false; }
+        } catch (RuntimeException exception) {
+            // Claim sai kiểu được xử lý như token không hợp lệ, không để lọt qua bước xác minh.
+            return false;
+        }
     }
 }

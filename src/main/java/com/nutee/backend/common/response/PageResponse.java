@@ -18,7 +18,6 @@ public record PageResponse<T>(
         content = List.copyOf(content);
     }
 
-    /** Chuyển Page của Spring thành dữ liệu phân trang công khai. */
     public static <T> PageResponse<T> from(Page<T> page) {
         return new PageResponse<>(page.getContent(), page.getNumber(), page.getSize(),
                 page.getTotalElements(), page.getTotalPages(), page.isFirst(), page.isLast());

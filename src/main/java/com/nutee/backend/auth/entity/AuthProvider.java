@@ -37,14 +37,12 @@ public class AuthProvider {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    /** Tạo liên kết với danh tính đã xác minh của provider tương ứng. */
     public AuthProvider(User user, String provider, String providerUserId) {
         this.user = user;
         this.provider = provider;
         this.providerUserId = providerUserId;
     }
 
-    /** Gán thời điểm tạo và cập nhật khi lưu liên kết lần đầu. */
     @PrePersist
     void initializeTimestamps() {
         createdAt = updatedAt = Instant.now();

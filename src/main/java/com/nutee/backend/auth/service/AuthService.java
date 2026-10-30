@@ -85,15 +85,19 @@ public class AuthService {
 
     /** Thu hồi refresh token khớp phiên hiện tại; token thiếu, sai hoặc hết hạn được bỏ qua. */
     public void logout(String token) {
-        if (token == null || token.isBlank()) return;
+        if (token == null || token.isBlank()) {
+            return;
+        }
         Jwt jwt;
         try {
             jwt = tokens.decodeRefresh(token);
         } catch (JwtException | IllegalArgumentException exception) {
-            return; // Cho phép đăng xuất ngay cả khi phiên đã hết hạn.
+            return;
         }
         users.findLockedById(UUID.fromString(jwt.getSubject())).ifPresent(user -> {
-            if (matchesRefreshToken(user, token)) user.replaceRefreshToken(null);
+            if (matchesRefreshToken(user, token)) {
+                user.replaceRefreshToken(null);
+            }
         });
     }
 
@@ -106,7 +110,9 @@ public class AuthService {
     /** Đăng nhập hoặc tạo tài khoản từ danh tính đã được Strategy của provider xác minh. */
     public AuthResponse socialLogin(String provider, SocialIdentity identity) {
         AuthProvider linked = providers.findByProviderAndProviderUserId(provider, identity.subject()).orElse(null);
-        if (linked != null) return startSession(linked.getUser());
+        if (linked != null) {
+            return startSession(linked.getUser());
+        }
 
         String email = normalize(identity.email());
         if (users.existsByEmailIgnoreCase(email)) {
@@ -133,7 +139,9 @@ public class AuthService {
         if (linked != null && !linked.getProviderUserId().equals(identity.subject())) {
             throw new ApiException(HttpStatus.CONFLICT, "This account already has a different identity for this provider.");
         }
-        if (existing == null) providers.saveAndFlush(new AuthProvider(user, provider, identity.subject()));
+        if (existing == null) {
+            providers.saveAndFlush(new AuthProvider(user, provider, identity.subject()));
+        }
         user.verifyEmail();
         return UserResponse.from(user);
     }
@@ -142,11 +150,12 @@ public class AuthService {
     private AuthResponse startSession(User user) {
         User locked = users.findLockedById(user.getId())
                 .orElseThrow(() -> new BadCredentialsException("Invalid account."));
-        if (!locked.isActive()) throw new BadCredentialsException("Invalid account.");
+        if (!locked.isActive()) {
+            throw new BadCredentialsException("Invalid account.");
+        }
         return storeTokens(locked, tokens.issue(locked));
     }
 
-    /** Lưu refresh token mới vào user; transaction bảo đảm lưu phiên và cấp token cùng thành công. */
     private AuthResponse storeTokens(User user, AuthResponse issued) {
         user.replaceRefreshToken(issued.refreshToken());
         return issued;
@@ -158,9 +167,10 @@ public class AuthService {
                 user.getRefreshToken().getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Chuẩn hóa lỗi giải mã JWT thành lỗi xác thực chung cho endpoint refresh. */
     private Jwt refreshClaims(String token) {
-        if (token == null || token.isBlank()) throw new BadCredentialsException("Refresh token is required.");
+        if (token == null || token.isBlank()) {
+            throw new BadCredentialsException("Refresh token is required.");
+        }
         try {
             return tokens.decodeRefresh(token);
         } catch (JwtException | IllegalArgumentException exception) {
@@ -168,14 +178,14 @@ public class AuthService {
         }
     }
 
-    /** Tìm tài khoản theo ID và từ chối tài khoản đã bị khóa. */
     private User activeUser(UUID id) {
         User user = users.findById(id).orElseThrow(() -> new BadCredentialsException("Invalid account."));
-        if (!user.isActive()) throw new BadCredentialsException("Invalid account.");
+        if (!user.isActive()) {
+            throw new BadCredentialsException("Invalid account.");
+        }
         return user;
     }
 
-    /** Chuẩn hóa email/username để so sánh không phân biệt hoa thường. */
     private static String normalize(String value) {
         return value.strip().toLowerCase(Locale.ROOT);
     }

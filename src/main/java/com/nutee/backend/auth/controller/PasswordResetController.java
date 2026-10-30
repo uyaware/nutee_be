@@ -27,7 +27,6 @@ public class PasswordResetController {
                 "Nếu email có tài khoản phù hợp, bạn sẽ nhận được liên kết đặt lại mật khẩu."));
     }
 
-    /** Đổi mật khẩu bằng mã hợp lệ và trả 204 khi hoàn tất. */
     @PostMapping(value = "/reset-password", consumes = "application/json")
     public ResponseEntity<Void> reset(@Valid @RequestBody ResetPasswordRequest request) {
         passwords.reset(request.token(), request.password());

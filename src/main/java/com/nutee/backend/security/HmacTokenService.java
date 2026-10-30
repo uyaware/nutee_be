@@ -66,17 +66,22 @@ public class HmacTokenService {
     }
 
     /** Kiểm tra chữ ký, loại và hạn dùng của access token. */
-    public Jwt decodeAccess(String token) { return accessDecoder.decode(token); }
+    public Jwt decodeAccess(String token) {
+        return accessDecoder.decode(token);
+    }
     /** Kiểm tra chữ ký, loại và hạn dùng của refresh token. */
-    public Jwt decodeRefresh(String token) { return refreshDecoder.decode(token); }
+    public Jwt decodeRefresh(String token) {
+        return refreshDecoder.decode(token);
+    }
 
-    /** Ký JWT với thông tin người dùng và các mốc thời gian cần thiết. */
     private String sign(User user, String kind, Instant now, Instant expiresAt, byte[] key) {
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder().subject(user.getId().toString())
                 .jwtID(UUID.randomUUID().toString()).issueTime(Date.from(now))
                 .notBeforeTime(Date.from(now)).expirationTime(Date.from(expiresAt))
                 .claim("email", user.getEmail()).claim("token_type", kind);
-        if ("access".equals(kind)) { claims.claim("role", user.getRole()); }
+        if ("access".equals(kind)) {
+            claims.claim("role", user.getRole());
+        }
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256)
                 .type(JOSEObjectType.JWT).build(), claims.build());
         try {

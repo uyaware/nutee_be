@@ -65,7 +65,6 @@ public class ProductService {
         return PageResponse.from(new PageImpl<>(assemble(rows), request, total));
     }
 
-    /** Trả sản phẩm công khai hoặc lỗi tương ứng khi ID sai/không tồn tại. */
     public ProductResponse get(int id) {
         validateId(id);
         var product = products.findOne(ProductSpecifications.visibleById(id))
@@ -79,7 +78,6 @@ public class ProductService {
         return loadVariants(List.of(id)).getOrDefault(id, List.of());
     }
 
-    /** Ghép facets từ thông số và danh sách thương hiệu/danh mục; không trả entity qua API. */
     public ProductFacetsResponse facets() {
         Map<String, List<String>> values = new LinkedHashMap<>();
         specifications.findFacetValues().forEach(value ->
@@ -91,19 +89,21 @@ public class ProductService {
     /** Phân trang bản sửa đánh giá cuối cùng, kể cả khi nhiều bản có cùng thời điểm. */
     public PageResponse<ProductReviewResponse> reviews(int id, int page, int size) {
         requireVisible(id);
-        if (page < 0 || size < 1 || size > 100) throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid review pagination.");
+        if (page < 0 || size < 1 || size > 100) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid review pagination.");
+        }
         long total = reviews.countByOrderItem_Variant_Product_IdAndHistoriesIsNotEmpty(id);
         int current = (int) Math.min(page, Math.max(0, (total - 1) / size));
         var request = PageRequest.of(current, size);
         return PageResponse.from(new PageImpl<>(reviews.findLatestByProductId(id, request), request, total));
     }
 
-    /** Kiểm tra định dạng ID như hợp đồng API hiện có. */
     private void validateId(int id) {
-        if (id < 1) throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid product ID.");
+        if (id < 1) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid product ID.");
+        }
     }
 
-    /** Áp dụng cùng điều kiện công khai cho các tài nguyên con. */
     private void requireVisible(int id) {
         validateId(id);
         if (!products.exists(ProductSpecifications.visibleById(id))) {
@@ -113,7 +113,9 @@ public class ProductService {
 
     /** Ghép dữ liệu sau phân trang; fetch join collection chỉ chạy cho danh sách ID đã chọn. */
     private List<ProductResponse> assemble(List<Product> rows) {
-        if (rows.isEmpty()) return List.of();
+        if (rows.isEmpty()) {
+            return List.of();
+        }
         var ids = rows.stream().map(Product::getId).toList();
         var related = products.findDistinctByIdIn(ids).stream().collect(Collectors.toMap(Product::getId, value -> value));
         var groupedVariants = loadVariants(ids);
@@ -153,7 +155,7 @@ public class ProductService {
         return result;
     }
 
-    /** Tạo DTO từ entity đã tải quan hệ, giữ nguyên giá/stock và thứ tự JSON trước khi chuyển JPA. */
+    /** Giá hiển thị lấy từ biến thể còn hàng; sản phẩm hết hàng dùng giá thấp nhất của mọi biến thể hợp lệ. */
     private ProductResponse response(Product product, List<ProductVariantResponse> variants,
             List<ProductImageResponse> images, long reviewCount) {
         int minimum = variants.stream().mapToInt(ProductVariantResponse::price).min().orElseThrow();

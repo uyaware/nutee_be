@@ -41,11 +41,12 @@ public class JwtCookies {
         csrfTokens.saveToken(null, request, response);
     }
 
-    /** Dùng cùng path, HttpOnly, Secure và SameSite cho mọi cookie xác thực. */
     private void add(HttpServletResponse response, String name, String value, Long maxAge) {
         var cookie = ResponseCookie.from(name, value).path(PATH).httpOnly(true)
                 .secure(properties.secure()).sameSite(properties.sameSite());
-        if (maxAge != null) cookie.maxAge(maxAge);
+        if (maxAge != null) {
+            cookie.maxAge(maxAge);
+        }
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.build().toString());
     }
 }

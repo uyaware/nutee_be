@@ -18,11 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class CategoryController {
     private final CategoryService service;
 
-    /** Danh sách danh mục. */
     @GetMapping
-    public List<CategoryResponse> categories() { return service.list(); }
+    public List<CategoryResponse> categories() {
+        return service.list();
+    }
 
-    /** Chi tiết danh mục theo ID. */
     @GetMapping("/{id}")
-    public CategoryResponse category(@PathVariable int id) { return service.get(id); }
+    public CategoryResponse category(@PathVariable int id) {
+        return service.get(id);
+    }
 }

@@ -7,10 +7,12 @@ import java.net.URI;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.mail.MailException;
@@ -22,7 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Xử lý mã khôi phục mật khẩu, gửi email và thu hồi refresh token sau khi đổi mật khẩu. */
 @Service
+@Slf4j
 public class PasswordResetService {
+    private static final Duration TOKEN_TTL = Duration.ofMinutes(15);
+    private static final Duration RESEND_INTERVAL = Duration.ofMinutes(1);
+
     private final UserRepository users;
     private final PasswordEncoder passwords;
     private final JavaMailSender mail;
@@ -54,13 +60,18 @@ public class PasswordResetService {
     public void forgot(String email) {
         requireEnabled();
         var found = users.findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT));
-        if (found.isEmpty()) { return; }
+        if (found.isEmpty()) {
+            return;
+        }
         var user = users.findLockedById(found.get().getId()).orElseThrow();
-        if (!user.isActive() || user.getPassword() == null) { return; }
+        if (!user.isActive() || user.getPassword() == null) {
+            return;
+        }
         Instant now = Instant.now();
-        // At most one email per minute per account, without revealing account existence.
         if (user.getPasswordResetExpiresAt() != null
-                && user.getPasswordResetExpiresAt().isAfter(now.plusSeconds(14 * 60))) { return; }
+                && user.getPasswordResetExpiresAt().isAfter(now.plus(TOKEN_TTL.minus(RESEND_INTERVAL)))) {
+            return;
+        }
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -68,15 +79,15 @@ public class PasswordResetService {
         message.setFrom(from);
         message.setTo(user.getEmail());
         message.setSubject("NUTEE - Đặt lại mật khẩu");
-        // Fragment keeps the token out of HTTP access logs and Referer headers.
+        // Dùng fragment để token không xuất hiện trong HTTP access log hoặc Referer.
         message.setText("Mở liên kết sau để đặt lại mật khẩu (hết hạn sau 15 phút):\n"
                 + resetUrl + "#token=" + token + "\nNếu bạn không yêu cầu, hãy bỏ qua email này.");
         try {
             mail.send(message);
-            user.requestPasswordReset(hash(token), now.plusSeconds(15 * 60));
+            user.requestPasswordReset(hash(token), now.plus(TOKEN_TTL));
         } catch (MailException exception) {
-            // Same public response for known and unknown accounts; never log reset tokens.
-            org.slf4j.LoggerFactory.getLogger(getClass()).warn("Password reset email delivery failed");
+            // Giữ phản hồi chung để không tiết lộ email có tài khoản; không log token hay nội dung mail.
+            log.warn("Password reset email delivery failed");
         }
     }
 
@@ -90,7 +101,9 @@ public class PasswordResetService {
         var user = users.findByPasswordResetHash(hash(token))
                 .orElseThrow(PasswordResetService::invalidToken);
         if (!user.isActive() || user.getPasswordResetExpiresAt() == null
-                || !user.getPasswordResetExpiresAt().isAfter(Instant.now())) { throw invalidToken(); }
+                || !user.getPasswordResetExpiresAt().isAfter(Instant.now())) {
+            throw invalidToken();
+        }
         user.resetPassword(passwords.encode(password));
     }
 
@@ -99,17 +112,19 @@ public class PasswordResetService {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(token.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
-    /** Tạo lỗi chung cho mã khôi phục không hợp lệ, đã dùng hoặc đã hết hạn. */
     private static ApiException invalidToken() {
         return new ApiException(HttpStatus.BAD_REQUEST, "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
     }
 
-    /** Chặn khôi phục mật khẩu khi email chưa được cấu hình và bật. */
     private void requireEnabled() {
-        if (!enabled) throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
-                "Khôi phục mật khẩu qua email hiện chưa khả dụng.");
+        if (!enabled) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Khôi phục mật khẩu qua email hiện chưa khả dụng.");
+        }
     }
 }
