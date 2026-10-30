@@ -1,4 +1,4 @@
-package com.nutee.backend.catalog.dto;
+package com.nutee.backend.product.dto;
 
 import com.nutee.backend.common.exception.ApiException;
 import java.util.LinkedHashMap;
@@ -9,11 +9,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.util.MultiValueMap;
 
 /** Bộ lọc catalog; page bắt đầu từ 0 và tham số được kiểm tra trước khi query. */
-public record CatalogFilter(String q, Integer category, List<Integer> brands, Integer minPrice,
+public record ProductFilter(String q, Integer category, List<Integer> brands, Integer minPrice,
         Integer maxPrice, boolean inStock, String sort, int page, int size,
         Map<String, List<String>> specifications) {
     /** Đọc query, giới hạn phân trang và tránh bộ lọc quá lớn. */
-    public static CatalogFilter from(MultiValueMap<String, String> params) {
+    public static ProductFilter from(MultiValueMap<String, String> params) {
         String q = params.getFirst("q") == null ? "" : params.getFirst("q").trim();
         if (q.length() > 160) throw invalid("q must not exceed 160 characters.");
         String sort = params.getFirst("sort") == null ? "featured" : params.getFirst("sort");
@@ -41,7 +41,7 @@ public record CatalogFilter(String q, Integer category, List<Integer> brands, In
             }
         });
         if (specs.size() > 10) throw invalid("At most 10 specification filters are allowed.");
-        return new CatalogFilter(q, number(params.getFirst("category"), "category", null, 1, Integer.MAX_VALUE),
+        return new ProductFilter(q, number(params.getFirst("category"), "category", null, 1, Integer.MAX_VALUE),
                 brands, min, max, "true".equals(inStock), sort,
                 number(params.getFirst("page"), "page", 0, 0, 1_000_000),
                 number(params.getFirst("size"), "size", 12, 1, 100), specs);

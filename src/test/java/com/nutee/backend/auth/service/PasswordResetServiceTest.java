@@ -29,7 +29,7 @@ class PasswordResetServiceTest {
     void configure() {
         user = User.create("tester", "test@example.com", "old-hash", "Test", false, null);
         when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
-        when(users.findForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(users.findLockedById(user.getId())).thenReturn(Optional.of(user));
         when(users.findByPasswordResetHash(anyString())).thenAnswer(invocation ->
                 invocation.getArgument(0).equals(user.getPasswordResetHash()) ? Optional.of(user) : Optional.empty());
     }
@@ -68,7 +68,7 @@ class PasswordResetServiceTest {
         service.forgot("unknown@example.com");
         User google = User.create("google", "google@example.com", null, null, true, null);
         when(users.findByEmailIgnoreCase(google.getEmail())).thenReturn(Optional.of(google));
-        when(users.findForUpdate(google.getId())).thenReturn(Optional.of(google));
+        when(users.findLockedById(google.getId())).thenReturn(Optional.of(google));
         service.forgot(google.getEmail());
         verifyNoInteractions(mail);
     }

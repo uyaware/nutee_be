@@ -34,7 +34,7 @@ class AuthServiceTest {
         user = User.create("tester", "test@example.com", "hash", "Test", false, null);
         original = tokens.issue(user).refreshToken();
         user.replaceRefreshToken(original);
-        given(users.findForUpdate(user.getId())).willReturn(Optional.of(user));
+        given(users.findLockedById(user.getId())).willReturn(Optional.of(user));
     }
 
     @Test

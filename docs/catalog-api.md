@@ -10,6 +10,78 @@ from its valid variants. All selected specification filters must match the same
 variant. Reviews resolve their product through the purchased order item and
 variant, and only their latest history entry is returned.
 
+## Backend organization
+
+The storefront catalog is composed from three backend features:
+
+```text
+com.nutee.backend/
+    product/
+        controller/  service/  repository/  dto/
+        entity/
+        variant/
+            entity/  repository/  dto/
+            specification/
+                entity/  repository/  dto/
+        image/
+            entity/  repository/  dto/
+        review/
+            entity/  repository/  dto/
+    brand/
+        controller/  service/  repository/  dto/  entity/
+    category/
+        controller/  service/  repository/  dto/  entity/
+```
+
+Product owns search, visibility checks and assembly of its response. Variant,
+image, specification and review queries live with those product resources.
+Brand/category have independent read controllers and lookup/error handling.
+Related rows are still loaded in batches for a whole product page; splitting
+the packages does not introduce a query per product or per variant. The variant
+and review endpoints check visibility without loading every product relation.
+
+This organization change preserves public URLs, JSON fields, OpenAPI operation
+and schema names, validation rules, database migrations and seed data. Frontend
+changes are not required. Child resources have no extra controllers/services
+until they have their own API/business operations.
+
+## Spring Data JPA
+
+All business repositories use Spring Data JPA, preferring built-in repository
+methods and derived queries. Brand/category reads use `findAll`/`findById`;
+variants, images and specifications use derived queries with `Sort` and selective
+`EntityGraph` fetching. User lookups also use derived queries, retaining
+pessimistic row locks when changing sessions or consuming reset codes.
+
+Product filtering uses
+`JpaSpecificationExecutor` with Criteria subqueries for visibility, displayed
+price, stock, and same-variant specification matching. Counting precedes a JPA
+Slice so out-of-range pages are clamped without a duplicate count query.
+
+Product IDs are paged before fetch-joining brand/category relationships. Variants,
+their images/specifications, product images and review counts are loaded in
+batches. No collection fetch join is used in a paged query, and API responses
+contain DTOs rather than JPA entities. Tests check that the number of queries
+stays bounded when a product page grows.
+
+Category descendants are calculated from one JPA repository read with a visited
+ID set, preserving recursive filtering even if category data contains a cycle.
+The latest review uses JPQL with timestamp/ID tie-breaking and a username fallback
+when the author's full name is blank. Explicit JPQL remains only for this
+latest-review projection, grouped review counts and distinct specification facets;
+each method documents why a derived query is insufficient. Purchase-price
+snapshots remain unchanged.
+
+The JPA model includes the existing user/provider entities and nine commerce
+entities needed by these reads. `order.item.entity.OrderItem` is mapped so review
+queries can traverse the purchase relationship; it does not add order mutation
+APIs. Existing Flyway migrations and the seed SQL are unchanged. Hibernate remains
+in `ddl-auto: validate`; JPA does not create or alter tables.
+
+There is no application `JdbcTemplate`, direct JDBC, or native SQL repository
+query. SQL is retained for Flyway, the opt-in seed and database test fixtures.
+The mandatory JPA policy is recorded in `AGENTS.md`.
+
 ## Development seed
 
 After starting the backend once so Flyway initializes the database, run this from

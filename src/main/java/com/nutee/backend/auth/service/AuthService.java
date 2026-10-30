@@ -75,7 +75,7 @@ public class AuthService {
     /** Xác minh refresh token hiện tại và xoay cặp JWT, không kéo dài hạn phiên ban đầu. */
     public AuthResponse refresh(String token) {
         Jwt jwt = refreshClaims(token);
-        User user = users.findForUpdate(UUID.fromString(jwt.getSubject()))
+        User user = users.findLockedById(UUID.fromString(jwt.getSubject()))
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token."));
         if (!user.isActive() || !matchesRefreshToken(user, token)) {
             throw new BadCredentialsException("Invalid refresh token.");
@@ -92,7 +92,7 @@ public class AuthService {
         } catch (JwtException | IllegalArgumentException exception) {
             return; // Cho phép đăng xuất ngay cả khi phiên đã hết hạn.
         }
-        users.findForUpdate(UUID.fromString(jwt.getSubject())).ifPresent(user -> {
+        users.findLockedById(UUID.fromString(jwt.getSubject())).ifPresent(user -> {
             if (matchesRefreshToken(user, token)) user.replaceRefreshToken(null);
         });
     }
@@ -140,7 +140,7 @@ public class AuthService {
 
     /** Khóa và kiểm tra lại tài khoản trước khi thay phiên đăng nhập cũ bằng phiên mới. */
     private AuthResponse startSession(User user) {
-        User locked = users.findForUpdate(user.getId())
+        User locked = users.findLockedById(user.getId())
                 .orElseThrow(() -> new BadCredentialsException("Invalid account."));
         if (!locked.isActive()) throw new BadCredentialsException("Invalid account.");
         return storeTokens(locked, tokens.issue(locked));

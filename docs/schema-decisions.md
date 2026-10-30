@@ -107,7 +107,7 @@ updated timestamps default to now(); there are no update triggers.
 
 ## Catalog compatibility and verification
 
-Catalog SQL now reads the direct product brand, variant specifications, and
+Catalog JPA queries read the direct product brand, variant specifications, and
 reviews through order items. The public response retains its `brands` array
 (zero or one entry) and distinct aggregated variant specification values. Every
 selected specification must match the same valid variant. No API paths, cookies,
@@ -125,6 +125,11 @@ inside rolled-back test transactions, and separately verifies an empty catalog.
 These fixtures never run in application initialization or Flyway. Schema tests
 check ownership, cart uniqueness, purchase-linked reviews/aftersale requests,
 SKU-independent references and preserved decimal purchase prices.
+
+Business persistence now uses Spring Data JPA for the commerce entities as well
+as users/provider identities. Associations are LAZY and related rows are loaded
+in batches after pagination. Entity mappings validate against this unchanged
+Flyway baseline; no migration/data reset was needed for the JPA conversion.
 
 Run the suite using JDK 21 and Docker with PostgreSQL 16 containers:
 

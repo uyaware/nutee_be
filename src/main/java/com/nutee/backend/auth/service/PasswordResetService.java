@@ -55,7 +55,7 @@ public class PasswordResetService {
         requireEnabled();
         var found = users.findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT));
         if (found.isEmpty()) { return; }
-        var user = users.findForUpdate(found.get().getId()).orElseThrow();
+        var user = users.findLockedById(found.get().getId()).orElseThrow();
         if (!user.isActive() || user.getPassword() == null) { return; }
         Instant now = Instant.now();
         // At most one email per minute per account, without revealing account existence.

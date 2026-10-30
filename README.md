@@ -241,6 +241,21 @@ and pagination DTOs; `config` owns OpenAPI. Transaction boundaries are in servic
 dependencies use constructor injection, and persistence entities stay out of APIs.
 Domain tables without implemented behavior do not receive empty Java classes.
 
+Product, brand and category code is organized by feature. `product` contains
+search/response assembly and the `variant`, `image`, `review` packages;
+variant specifications live in `product.variant.specification`. Each resource
+owns its query/response types. Public catalog URLs and payloads stay unchanged;
+see [Catalog API](docs/catalog-api.md) for the package layout.
+
+Business persistence is implemented with Spring Data JPA, including product,
+brand, category, variants, images, specifications and review/purchase references.
+Repositories prefer built-in methods and derived queries with Sort/EntityGraph.
+Specifications handle dynamic filtering; explicit JPQL is reserved for facets,
+grouped review counts and latest-review projections. Related rows are fetched
+in batches after database pagination. Application code does not use JdbcTemplate
+or direct JDBC. Flyway/seed/test SQL remains separate, and Hibernate only validates
+the schema. `AGENTS.md` makes this JPA approach mandatory for subsequent changes.
+
 Datasource: DB_URL, DB_USERNAME, DB_PASSWORD; optional Hikari sizing variables are
 DB_POOL_MAX_SIZE / DB_POOL_MIN_IDLE. SERVER_PORT defaults to 8080. Deployments must
 provide database credentials and HMAC keys from a secret store; do not reuse test

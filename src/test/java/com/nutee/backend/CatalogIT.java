@@ -6,10 +6,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import jakarta.servlet.http.Cookie;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
 import org.flywaydb.core.Flyway;
+import org.hibernate.SessionFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -26,7 +29,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.jpa.properties.hibernate.generate_statistics=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -37,6 +40,8 @@ class CatalogIT {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
     @Autowired JdbcTemplate jdbc;
     @Autowired MockMvc mvc;
+    @Autowired EntityManager entityManager;
+    @Autowired EntityManagerFactory entityManagerFactory;
 
     @Test
     @Sql(statements = "SELECT 1")
@@ -81,6 +86,9 @@ class CatalogIT {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
         mvc.perform(get("/api/v1/products").param("q", "ExampleTech"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+        mvc.perform(get("/api/v1/products").param("minPrice", "6000000").param("maxPrice", "11000000"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(1));
         mvc.perform(get("/api/v1/products").param("q", "' OR 1=1 --"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
         mvc.perform(get("/api/v1/products").param("q", "%"))
@@ -120,6 +128,71 @@ class CatalogIT {
     }
 
     @Test
+    void brandAndCategoryEndpointsKeepTheirIndependentReadContracts() throws Exception {
+        mvc.perform(get("/api/v1/brands")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].name").value("ExampleTech"));
+        mvc.perform(get("/api/v1/brands/1")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.name").value("ExampleTech"));
+        mvc.perform(get("/api/v1/brands/999999")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/categories")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(4));
+        mvc.perform(get("/api/v1/categories/101")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(101))
+                .andExpect(jsonPath("$.name").value("Laptops"))
+                .andExpect(jsonPath("$.parentId").value(100));
+        mvc.perform(get("/api/v1/categories/100")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.parentId").isEmpty());
+        mvc.perform(get("/api/v1/categories/999999")).andExpect(status().isNotFound());
+
+        jdbc.update("UPDATE brands SET name = 'alpha' WHERE id = 1");
+        jdbc.update("UPDATE brands SET name = 'Beta' WHERE id = 2");
+        entityManager.clear();
+        mvc.perform(get("/api/v1/brands")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("alpha"))
+                .andExpect(jsonPath("$[1].name").value("Beta"));
+    }
+
+    @Test
+    void loadsJpaProductRelationsInBatchesAsThePageGrows() throws Exception {
+        jdbc.update("INSERT INTO product_categories (product_id, cat_id) VALUES (1, 102)");
+        mvc.perform(get("/api/v1/products/1")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.categories.length()").value(2));
+        var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        entityManager.clear();
+        statistics.clear();
+        mvc.perform(get("/api/v1/products").param("size", "1")).andExpect(status().isOk());
+        long oneProduct = statistics.getPrepareStatementCount();
+        entityManager.clear();
+        statistics.clear();
+        mvc.perform(get("/api/v1/products").param("size", "3")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(3));
+        long threeProducts = statistics.getPrepareStatementCount();
+        assertThat(oneProduct).isPositive();
+        assertThat(threeProducts).isLessThanOrEqualTo(oneProduct + 1);
+        assertThat(threeProducts).isLessThanOrEqualTo(8);
+    }
+
+    @Test
+    void categoryFilteringTerminatesEvenWhenTheHierarchyContainsACycle() throws Exception {
+        jdbc.update("UPDATE categories SET parent = 101 WHERE id = 100");
+        mvc.perform(get("/api/v1/products").param("category", "100"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3));
+    }
+
+    @Test
+    void searchesProductsWithoutABrandAndTreatsWildcardsAsLiteralText() throws Exception {
+        jdbc.update("UPDATE products SET brand_id = NULL, name = ? WHERE id = 3", "Keyboard 100% _\\ edition");
+        for (String q : new String[] {"keyboard", "%", "_", "\\"}) {
+            mvc.perform(get("/api/v1/products").param("q", q))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                    .andExpect(jsonPath("$.content[0].id").value(3))
+                    .andExpect(jsonPath("$.content[0].brands.length()").value(0));
+        }
+    }
+
+    @Test
     void reviewsFollowOrderItemsAndReturnTheLatestRevisionOnce() throws Exception {
         mvc.perform(get("/api/v1/products/1")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.reviewCount").value(1));
@@ -129,6 +202,13 @@ class CatalogIT {
                 .andExpect(jsonPath("$.content[0].comment").value("Updated review"))
                 .andExpect(jsonPath("$.content[0].authorName").value("Test reviewer"))
                 .andExpect(jsonPath("$.content[0].email").doesNotExist());
+        jdbc.update("UPDATE review_histories SET created_at = '2026-01-01T00:00:00Z' WHERE id = 402");
+        jdbc.update("UPDATE users SET full_name = '   ' WHERE username = 'catalog-reviewer'");
+        mvc.perform(get("/api/v1/products/1/reviews")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].rating").value(5))
+                .andExpect(jsonPath("$.content[0].comment").value("Updated review"))
+                .andExpect(jsonPath("$.content[0].authorName").value("catalog-reviewer"));
     }
 
     @Test

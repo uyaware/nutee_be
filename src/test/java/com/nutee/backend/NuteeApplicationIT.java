@@ -56,7 +56,10 @@ class NuteeApplicationIT {
     @Test
     void contextStartsWithJpaAndEntireErdSchema() {
         assertThat(entityManagerFactory.isOpen()).isTrue();
-        assertThat(entityManagerFactory.getMetamodel().getEntities()).hasSize(2);
+        assertThat(entityManagerFactory.getMetamodel().getEntities()).extracting(entity -> entity.getName())
+                .containsExactlyInAnyOrder("User", "AuthProvider", "Brand", "Category", "Product",
+                        "ProductVariant", "ProductImage", "VariantSpecification", "OrderItem",
+                        "ProductReview", "ProductReviewHistory");
         assertThat(flyway.info().applied()).hasSize(3);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
@@ -110,7 +113,14 @@ class NuteeApplicationIT {
     void enabledDocumentationExposesBearerSchemeAndSwaggerUi() throws Exception {
         mvc.perform(get("/api/v1/api-docs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.components.securitySchemes.jwtAuth.in").value("cookie"));
+                .andExpect(jsonPath("$.components.securitySchemes.jwtAuth.in").value("cookie"))
+                .andExpect(jsonPath("$.paths['/api/v1/products'].get.operationId").value("products"))
+                .andExpect(jsonPath("$.paths['/api/v1/brands'].get.operationId").value("brands"))
+                .andExpect(jsonPath("$.paths['/api/v1/categories'].get.operationId").value("categories"))
+                .andExpect(jsonPath("$.components.schemas.Product").exists())
+                .andExpect(jsonPath("$.components.schemas.Variant").exists())
+                .andExpect(jsonPath("$.components.schemas.PageResponseProduct").exists())
+                .andExpect(jsonPath("$.components.schemas.PageResponseReview").exists());
         mvc.perform(get("/api/v1/swagger-ui.html"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(header().string("Location", "/api/v1/swagger-ui/index.html"));

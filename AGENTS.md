@@ -10,6 +10,22 @@
   Mock HTTP chỉ dùng trong test.
 - Giữ `/api/v1`, cookie HttpOnly cho access/refresh token và các chức năng đang có.
 - Controller xử lý HTTP; service xử lý nghiệp vụ; repository truy cập dữ liệu.
+- Bắt buộc dùng Spring Data JPA cho truy cập dữ liệu nghiệp vụ: entity ánh xạ schema hiện có,
+  repository kế thừa JpaRepository.
+- Ưu tiên method có sẵn của JpaRepository, sau đó là derived query từ tên method cho điều kiện
+  đơn giản. Dùng Sort/Pageable và EntityGraph khi cần; map DTO trong service hoặc dùng projection
+  phù hợp. Không viết @Query chỉ để thay findAll/findById hoặc các điều kiện derived query đã hỗ trợ.
+- Dùng Specification cho bộ lọc động/nhiều tổ hợp. Chỉ dùng @Query cho truy vấn phức tạp,
+  tổng hợp hoặc projection mà method có sẵn/derived query không diễn đạt rõ, và ghi lý do tại method.
+  Không ép derived query thành tên quá dài hoặc chuyển lọc/phân trang từ database về bộ nhớ chỉ
+  để tránh @Query. Luôn giữ các yêu cầu khóa dòng, thứ tự dữ liệu và tránh N+1 khi đơn giản hóa query.
+- Không dùng JdbcTemplate, NamedParameterJdbcTemplate hoặc JDBC trực tiếp trong `src/main/java`
+  để thay cho JPA. Native query qua Spring Data JPA chỉ dùng khi JPQL/Criteria không đáp ứng
+  phù hợp và phải ghi rõ lý do. SQL trong Flyway, seed và kiểm tra database ở test vẫn được phép.
+- Quan hệ JPA mặc định tải LAZY; dùng fetch join/EntityGraph hoặc truy vấn theo lô có chủ đích
+  để tránh N+1. Không fetch collection cùng truy vấn phân trang và không trả entity trực tiếp qua API.
+- Flyway quản lý schema; Hibernate chỉ `ddl-auto: validate`. Không đổi migration hoặc dữ liệu
+  chỉ để thuận tiện cho entity mapping.
 - Không tạo interface cho mọi service, lớp chuyển tiếp chỉ gọi một hàm, base class,
   factory hoặc DTO trùng dữ liệu nếu không mang lại giá trị cụ thể.
 - Dùng Strategy cho đăng nhập bên thứ ba: mỗi provider tự xác minh danh tính;
