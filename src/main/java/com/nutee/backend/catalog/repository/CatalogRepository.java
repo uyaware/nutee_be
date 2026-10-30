@@ -29,7 +29,7 @@ public class CatalogRepository {
             """;
 
     /** Các cột nền trước khi ghép các quan hệ của sản phẩm. */
-    private record ProductRow(int id, String name, String description, BigDecimal avgRating, int soldCount,
+    private record ProductRow(int id, Integer defaultVariantId, String name, String description, BigDecimal avgRating, int soldCount,
             int reviewCount, int price, int maxPrice, long stock, Instant updatedAt) {}
 
     /** Đếm đúng tập sản phẩm công khai có biến thể hợp lệ. */
@@ -117,7 +117,7 @@ public class CatalogRepository {
     /** Chọn các cột nền dùng chung cho danh sách và chi tiết. */
     private String select() {
         return """
-                SELECT p.id, p.name, p.description, coalesce(p.avg_rating, 0) AS avg_rating,
+                SELECT p.id, p.default_variant_id, p.name, p.description, coalesce(p.avg_rating, 0) AS avg_rating,
                   coalesce(p.sold_count, 0) AS sold_count, p.updated_at, offer.price, offer.max_price, offer.stock,
                   (SELECT count(*) FROM reviews r
                    JOIN order_items item ON item.id = r.order_item_id
@@ -173,7 +173,8 @@ public class CatalogRepository {
 
     /** Tải quan hệ theo lô cho tối đa một trang; không sinh truy vấn theo từng sản phẩm. */
     private List<Product> load(String sql, MapSqlParameterSource params) {
-        var rows = jdbc.query(sql, params, (rs, row) -> new ProductRow(rs.getInt("id"), rs.getString("name"),
+        var rows = jdbc.query(sql, params, (rs, row) -> new ProductRow(rs.getInt("id"),
+                rs.getObject("default_variant_id", Integer.class), rs.getString("name"),
                 rs.getString("description"), rs.getBigDecimal("avg_rating"), rs.getInt("sold_count"), rs.getInt("review_count"),
                 rs.getInt("price"), rs.getInt("max_price"), rs.getLong("stock"), rs.getTimestamp("updated_at").toInstant()));
         if (rows.isEmpty()) return List.of();
@@ -181,6 +182,7 @@ public class CatalogRepository {
         Map<Integer, List<Brand>> brands = new HashMap<>();
         Map<Integer, List<Category>> categories = new HashMap<>();
         Map<Integer, List<Specification>> specifications = new HashMap<>();
+        Map<Integer, List<Specification>> variantSpecifications = new HashMap<>();
         Map<Integer, List<Variant>> variants = new HashMap<>();
         Map<Integer, List<Image>> images = new HashMap<>();
         jdbc.query("SELECT p.id AS product_id, b.* FROM products p JOIN brands b ON b.id = p.brand_id WHERE p.id IN (:ids) ORDER BY b.id", ids,
@@ -188,17 +190,24 @@ public class CatalogRepository {
         jdbc.query("SELECT pc.product_id, c.* FROM product_categories pc JOIN categories c ON c.id = pc.cat_id WHERE pc.product_id IN (:ids) ORDER BY c.id", ids,
                 rs -> { categories.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Category(rs.getInt("id"), rs.getObject("parent", Integer.class), rs.getString("name"))); });
         jdbc.query("""
-                SELECT DISTINCT v.product_id, s.specification_name, s.specification_value
+                SELECT v.id AS variant_id, v.product_id, s.specification_name, s.specification_value
                 FROM variant_specifications s JOIN product_variants v ON v.id = s.variant_id
                 WHERE v.product_id IN (:ids) AND v.price >= 0 AND v.quantity >= 0
-                ORDER BY v.product_id, s.specification_name, s.specification_value
+                ORDER BY v.product_id, s.specification_name, s.specification_value, v.id
                 """, ids,
-                rs -> { specifications.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Specification(rs.getString("specification_name"), rs.getString("specification_value"))); });
+                rs -> {
+                    var specification = new Specification(rs.getString("specification_name"), rs.getString("specification_value"));
+                    variantSpecifications.computeIfAbsent(rs.getInt("variant_id"), key -> new ArrayList<>()).add(specification);
+                    var productSpecifications = specifications.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>());
+                    if (!productSpecifications.contains(specification)) productSpecifications.add(specification);
+                });
         jdbc.query("SELECT * FROM product_variants WHERE product_id IN (:ids) AND price >= 0 AND quantity >= 0 ORDER BY price, id", ids,
-                rs -> { variants.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Variant(rs.getInt("id"), rs.getString("sku"), rs.getInt("price"), rs.getInt("quantity"))); });
+                rs -> { variants.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Variant(
+                        rs.getInt("id"), rs.getString("sku"), rs.getInt("price"), rs.getInt("quantity"),
+                        rs.getObject("image_id", Integer.class), variantSpecifications.getOrDefault(rs.getInt("id"), List.of()))); });
         jdbc.query("SELECT * FROM product_images WHERE product_id IN (:ids) ORDER BY is_primary DESC NULLS LAST, id", ids,
                 rs -> { images.computeIfAbsent(rs.getInt("product_id"), key -> new ArrayList<>()).add(new Image(rs.getInt("id"), rs.getString("image_url"), rs.getBoolean("is_primary"))); });
-        return rows.stream().map(row -> new Product(row.id(), row.name(), row.description(), row.avgRating(), row.soldCount(),
+        return rows.stream().map(row -> new Product(row.id(), row.defaultVariantId(), row.name(), row.description(), row.avgRating(), row.soldCount(),
                 row.reviewCount(), row.price(), row.maxPrice(), row.stock(), row.updatedAt(), brands.getOrDefault(row.id(), List.of()),
                 categories.getOrDefault(row.id(), List.of()), specifications.getOrDefault(row.id(), List.of()),
                 variants.getOrDefault(row.id(), List.of()), images.getOrDefault(row.id(), List.of()))).toList();

@@ -15,12 +15,13 @@ public final class CatalogResponse {
     public record Category(int id, Integer parentId, String name) {}
     /** Giá trị thông số biến thể, được tổng hợp khi đọc sản phẩm. */
     public record Specification(String name, String value) {}
-    /** Biến thể có SKU, giá và tồn kho riêng theo schema hiện có. */
-    public record Variant(int id, String sku, int price, int quantity) {}
+    /** Biến thể có SKU, giá, tồn kho, ảnh và thông số riêng theo schema hiện có. */
+    public record Variant(int id, String sku, int price, int quantity, Integer imageId,
+            List<Specification> specifications) {}
     /** Ảnh sản phẩm và cờ ảnh chính. */
     public record Image(int id, String url, boolean primary) {}
     /** Sản phẩm cùng quan hệ được tải theo lô. */
-    public record Product(int id, String name, String description, BigDecimal avgRating, int soldCount,
+    public record Product(int id, Integer defaultVariantId, String name, String description, BigDecimal avgRating, int soldCount,
             int reviewCount, int price, int maxPrice, long stock, Instant updatedAt,
             List<Brand> brands, List<Category> categories, List<Specification> specifications,
             List<Variant> variants, List<Image> images) {}

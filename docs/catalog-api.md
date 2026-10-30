@@ -1,8 +1,7 @@
 # Catalog API
 
-Catalog follows the reset schema from the updated ERD. The old seed SQL and
-PowerShell runner have been removed; no demo products are loaded into the local
-database. A new database returns an empty catalog until real products are added.
+Catalog follows the reset schema from the updated ERD. Flyway never inserts
+demo data. A separate, opt-in development seed now populates the new relationships.
 
 Each product has one optional brand via `products.brand_id`. The public `brands`
 array is retained and contains zero or one entry. Specifications come from
@@ -10,6 +9,28 @@ array is retained and contains zero or one entry. Specifications come from
 from its valid variants. All selected specification filters must match the same
 variant. Reviews resolve their product through the purchased order item and
 variant, and only their latest history entry is returned.
+
+## Development seed
+
+After starting the backend once so Flyway initializes the database, run this from
+another terminal in the backend directory:
+
+```powershell
+.\scripts\seed-catalog.ps1
+```
+
+The seed creates 100 sample products, 300 variants, 12 brands, 11 categories and
+200 product images. Products have a direct brand/default variant, and variants
+have their own image and technical specifications. SKUs use the reserved `NT26`
+prefix. Product names, prices and configurations are illustrative development
+data; images reference the existing frontend SVG illustrations.
+
+Some variants and products are out of stock to exercise selection and availability.
+No users, orders, reviews, promotions or aftersale requests are fabricated. The
+SQL runs in one transaction under an advisory lock. Re-running skips existing
+NT26 product families and preserves manual changes to stock, prices and defaults;
+it does not repair partially deleted sample families or reset the database.
+The PowerShell runner reads the ignored `.env` and transfers SQL as UTF-8 bytes.
 
 ## API đọc công khai
 
@@ -72,10 +93,17 @@ Danh sách dùng `PageResponse`:
 }
 ```
 
-Mỗi sản phẩm có `id`, `name`, `description`, `price`, `maxPrice`, `stock`,
+Mỗi sản phẩm có `id`, `defaultVariantId`, `name`, `description`, `price`, `maxPrice`, `stock`,
 `avgRating`, `reviewCount`, `soldCount`, `updatedAt`, `brands`, `categories`,
 `specifications`, `variants`, `images`. ID ở API là số; frontend chuyển sang chuỗi
 để giữ các component/URL hiện có. Bộ lọc và phân trang được xử lý tại backend.
+
+Each variant additionally returns nullable `imageId` and its own `specifications`
+array of `{ name, value }`. `defaultVariantId` is nullable and may identify an
+out-of-stock variant; it is never silently replaced in the database. Existing
+product-level aggregated specifications remain available for compatibility.
+Frontend product details use the chosen variant's data; product cards use the
+variant corresponding to the backend's displayed minimum price.
 
 ## Frontend
 
@@ -97,3 +125,6 @@ in `src/test/resources/db/fixture/catalog.sql`. Every fixture transaction rolls
 back. Tests cover empty databases, direct brand lookup, same-variant specification
 filters, review/order-item joins, pagination, hidden products and API security.
 The fixtures are not application seed data and never run during normal startup.
+The seed regression runs the real SQL twice in its own `catalog_seed` test schema
+and verifies graph completeness, no purchase/account data, no duplicates, and
+preservation of edited prices and quantities.

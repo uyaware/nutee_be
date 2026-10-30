@@ -6,16 +6,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import jakarta.servlet.http.Cookie;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.DriverManager;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -51,7 +57,10 @@ class CatalogIT {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(3))
                 .andExpect(jsonPath("$.content.length()").value(3));
         mvc.perform(get("/api/v1/products/1/variants")).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].sku").value("TEST-LAPTOP-8"));
+                .andExpect(jsonPath("$[0].sku").value("TEST-LAPTOP-8"))
+                .andExpect(jsonPath("$[0].imageId").value(11))
+                .andExpect(jsonPath("$[0].specifications[0].value").value("8 GB"))
+                .andExpect(jsonPath("$[1].specifications[0].value").value("16 GB"));
         mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", "invalid")))
                 .andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/products")).andExpect(status().isForbidden());
@@ -102,6 +111,7 @@ class CatalogIT {
         mvc.perform(get("/api/v1/products").param("spec.ram", "16 GB").param("spec.storage", "512 GB"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
         mvc.perform(get("/api/v1/products/1")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultVariantId").value(11))
                 .andExpect(jsonPath("$.brands.length()").value(1))
                 .andExpect(jsonPath("$.brands[0].name").value("ExampleTech"))
                 .andExpect(jsonPath("$.specifications.length()").value(4));
@@ -119,5 +129,44 @@ class CatalogIT {
                 .andExpect(jsonPath("$.content[0].comment").value("Updated review"))
                 .andExpect(jsonPath("$.content[0].authorName").value("Test reviewer"))
                 .andExpect(jsonPath("$.content[0].email").doesNotExist());
+    }
+
+    @Test
+    @Sql(statements = "SELECT 1")
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void developmentSeedUsesTheNewSchemaAndPreservesExistingCatalogEdits() throws Exception {
+        Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas("catalog_seed").defaultSchema("catalog_seed").cleanDisabled(true).load().migrate();
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            connection.setSchema("catalog_seed");
+            var seeded = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+            String seed = Files.readString(Path.of("scripts/seed-catalog.sql"));
+            seeded.execute(seed);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(100);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(300);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM brands", Integer.class)).isEqualTo(12);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM categories", Integer.class)).isEqualTo(11);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products WHERE default_variant_id IS NULL",
+                    Integer.class)).isZero();
+            assertThat(seeded.queryForObject("""
+                    SELECT count(*) FROM product_variants variant
+                    WHERE NOT EXISTS (SELECT 1 FROM variant_specifications specification
+                        WHERE specification.variant_id = variant.id)
+                    """, Integer.class)).isZero();
+            for (String table : new String[] {"users", "orders", "reviews", "aftersale_requests"}) {
+                assertThat(seeded.queryForObject("SELECT count(*) FROM " + table, Integer.class)).isZero();
+            }
+            seeded.update("UPDATE product_variants SET price = 12345678, quantity = 7 WHERE sku = 'NT260001V01'");
+            seeded.execute(seed);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(100);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(300);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images", Integer.class)).isEqualTo(200);
+            assertThat(seeded.queryForObject("SELECT price FROM product_variants WHERE sku = 'NT260001V01'",
+                    Integer.class)).isEqualTo(12345678);
+            assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT260001V01'",
+                    Integer.class)).isEqualTo(7);
+        }
     }
 }

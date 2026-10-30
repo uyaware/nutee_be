@@ -113,8 +113,14 @@ reviews through order items. The public response retains its `brands` array
 selected specification must match the same valid variant. No API paths, cookies,
 authentication rules, frontend flows, or localStorage behavior are changed.
 
-The old 100-product catalog seed and its runner have been removed. `CatalogIT`
-uses small synthetic fixtures under `src/test/resources/db/fixture/catalog.sql`
+The old 100-product catalog seed and its runner were removed during the reset.
+The subsequent user request adds a new opt-in `scripts/seed-catalog.sql` and runner
+for the current schema: direct brand/default variant, per-variant image and
+specifications. It inserts no accounts or purchase/history data and is not a
+Flyway migration. See `docs/catalog-api.md` for seed usage and idempotency limits.
+The API also exposes `defaultVariantId`, variant `imageId` and per-variant
+specifications so the frontend can render the selected configuration accurately.
+`CatalogIT` uses small synthetic fixtures under `src/test/resources/db/fixture/catalog.sql`
 inside rolled-back test transactions, and separately verifies an empty catalog.
 These fixtures never run in application initialization or Flyway. Schema tests
 check ownership, cart uniqueness, purchase-linked reviews/aftersale requests,
