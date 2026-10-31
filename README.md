@@ -6,12 +6,16 @@ JUnit 5, Mockito and PostgreSQL Testcontainers. Spring Boot manages dependency v
 
 This modular monolith implements database migrations, authentication and public
 catalog APIs for products, variants, brands and categories, plus authenticated
-variant-based cart operations, account profile updates and delivery addresses.
-Order, payment, shipping, after-sales mutations and catalog administration are not implemented.
+variant-based cart operations, account profile updates, delivery addresses, product promotions
+and order vouchers with a server-side checkout quote. Checkout creates real orders with stock/voucher
+reservations, configurable delivery fees, COD and payOS payments/webhooks through an adapter.
+Fulfilment, carrier integration, refunds, after-sales mutations and catalog administration are not implemented.
 
 Catalog setup and API reference: [docs/catalog-api.md](docs/catalog-api.md).
 Cart endpoints and concurrency rules: [docs/cart-api.md](docs/cart-api.md).
 Profile/address endpoints and ownership rules: [docs/account-api.md](docs/account-api.md).
+Promotion/voucher rules and seed data: [docs/discounts-api.md](docs/discounts-api.md).
+Order/payment API, adapter and merchant setup: [docs/payments-api.md](docs/payments-api.md).
 
 ## Run locally on Windows
 
@@ -39,9 +43,14 @@ Never overwrite `.env` with the template after initialization: that would replac
 configuration needed by the existing database. Changing POSTGRES_PASSWORD does not
 change an already initialized PostgreSQL role's password.
 
-The application applies four Flyway migrations before JPA validates its mappings:
+The application applies seven Flyway migrations before JPA validates its mappings:
 `V1__init_schema.sql`, `V2__add_constraints.sql`, `V3__create_indexes.sql`,
-`V4__address_contacts.sql`. V4 adds recipient/phone and preserves existing data.
+`V4__address_contacts.sql`, `V5__discount_rules.sql`, `V6__orders_and_payments.sql`,
+and `V7__remove_duplicate_delivery_contacts.sql`.
+V4 adds per-address recipient/phone; V5 adds voucher minimum/cap limits and unique codes;
+V6 adds order snapshots, idempotency and payment audit. V7 removes the obsolete recipient/phone
+copies from addresses and recipient/phone/address_line copies from orders. User profiles,
+address rows and order-address references are retained; contact details come from users.
 This fresh baseline follows the updated ERD. The old local database and catalog
 seed were explicitly removed; create an empty database before restarting the API.
 Catalog data is never seeded automatically. Existing deployments of the previous migration chain

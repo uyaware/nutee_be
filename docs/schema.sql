@@ -7,3 +7,6 @@
 \ir ../src/main/resources/db/migration/V2__add_constraints.sql
 \ir ../src/main/resources/db/migration/V3__create_indexes.sql
 \ir ../src/main/resources/db/migration/V4__address_contacts.sql
+\ir ../src/main/resources/db/migration/V5__discount_rules.sql
+\ir ../src/main/resources/db/migration/V6__orders_and_payments.sql
+\ir ../src/main/resources/db/migration/V7__remove_duplicate_delivery_contacts.sql

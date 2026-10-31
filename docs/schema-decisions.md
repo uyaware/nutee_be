@@ -141,17 +141,28 @@ Run the suite using JDK 21 and Docker with PostgreSQL 16 containers:
 .\mvnw.cmd verify
 ```
 
-The integration schema contains 23 domain tables plus `flyway_schema_history`.
-Flyway must apply the three baseline migrations plus V4, validate their checksums, and apply
+The integration schema contains 25 domain tables plus `flyway_schema_history` (V6 adds two payment tables).
+Flyway must apply the three baseline migrations plus V4/V5/V6/V7, validate their checksums, and apply
 zero migrations on a second run. The separate migration smoke-test fixture is
 retained because it tests Flyway infrastructure and is not an application schema
 migration or catalog seed.
 
 ## Account profile and delivery contacts
 
-The requested profile/address feature adds V4 without changing the applied baseline.
-Each address now has nullable `recipient VARCHAR(80)` and `phone VARCHAR(10)`, backfilled
-from the owner when available. Province, ward and street remain separate existing fields.
+V4 originally added nullable recipient/phone copies to each delivery address.
+V7 removes those columns, together with orders.recipient, orders.phone and orders.address_line,
+without rewriting V4/V6. Contacts now come from users.full_name/users.phone, and orders use
+the existing orders.user_address_id FK. Province, ward and street remain separate existing fields.
 Profile updates change only `users.full_name` and `users.phone`; no auth contract changes.
 Address mutations lock the owner row before switching defaults and retain the partial
 unique index and order-address FK. See [Account API](account-api.md).
+
+V5 adds voucher minimum/cap fields and unique normalized promotion/voucher codes.
+Promotion uses the existing products.promotion_id and voucher recipients use user_vouchers.
+Quote does not create orders or consume quota. V6 checkout now creates orders and holds quota
+under a voucher row lock, together with stock reservations and a unique per-user idempotency key.
+V6 introduces order/order-item snapshots; V7 removes only the redundant delivery contact/address
+copies, retaining price/product snapshots. Profile/address edits affect delivery details displayed on old orders;
+payment_attempts and payment_events record stable payOS codes and deduplicated callbacks.
+See [Payment API](payments-api.md) for transaction, cancellation and reconciliation rules.
+See [Discount API and seed](discounts-api.md).
