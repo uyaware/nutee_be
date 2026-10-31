@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.nutee.backend.catalog.config.CatalogSeedRunner;
 import jakarta.servlet.http.Cookie;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -221,11 +222,12 @@ class CatalogIT {
         try (var connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
             connection.setSchema("catalog_seed");
-            var seeded = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
-            String seed = Files.readString(Path.of("scripts/seed-catalog.sql"));
-            seeded.execute(seed);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(100);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(300);
+            var dataSource = new SingleConnectionDataSource(connection, true);
+            var seeded = new JdbcTemplate(dataSource);
+            var seed = new CatalogSeedRunner(dataSource);
+            seed.run(null);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(101);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(301);
             assertThat(seeded.queryForObject("SELECT count(*) FROM brands", Integer.class)).isEqualTo(12);
             assertThat(seeded.queryForObject("SELECT count(*) FROM categories", Integer.class)).isEqualTo(11);
             assertThat(seeded.queryForObject("SELECT count(*) FROM products WHERE default_variant_id IS NULL",
@@ -238,13 +240,17 @@ class CatalogIT {
             for (String table : new String[] {"users", "orders", "reviews", "aftersale_requests"}) {
                 assertThat(seeded.queryForObject("SELECT count(*) FROM " + table, Integer.class)).isZero();
             }
+            assertThat(seeded.queryForObject("SELECT price FROM product_variants WHERE sku = 'NT26PAYOS2000'", Integer.class)).isEqualTo(2000);
+            assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT26PAYOS2000'", Integer.class)).isEqualTo(100);
+            seeded.update("UPDATE product_variants SET quantity = 93 WHERE sku = 'NT26PAYOS2000'");
             seeded.update("UPDATE product_variants SET price = 12345678, quantity = 7 WHERE sku = 'NT260001V01'");
-            seeded.execute(seed);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(100);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(300);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images", Integer.class)).isEqualTo(200);
+            seed.run(null);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(101);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(301);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images", Integer.class)).isEqualTo(201);
             assertThat(seeded.queryForObject("SELECT price FROM product_variants WHERE sku = 'NT260001V01'",
                     Integer.class)).isEqualTo(12345678);
+            assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT26PAYOS2000'", Integer.class)).isEqualTo(93);
             assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT260001V01'",
                     Integer.class)).isEqualTo(7);
         }

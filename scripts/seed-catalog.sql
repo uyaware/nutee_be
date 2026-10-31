@@ -133,6 +133,21 @@ BEGIN
         UPDATE products SET default_variant_id = selected_default_variant_id WHERE id = item_id;
         inserted := inserted + 1;
     END LOOP;
+    -- Sản phẩm riêng để thử thanh toán thật; không đặt lại giá/tồn kho sau khi đã tạo.
+    IF NOT EXISTS (SELECT 1 FROM product_variants WHERE sku = 'NT26PAYOS2000') THEN
+        INSERT INTO products (name, description, avg_rating, sold_count, is_published)
+        VALUES ('Sản phẩm kiểm thử thanh toán 2.000đ', 'Sản phẩm mẫu để kiểm thử quy trình thanh toán.', 0, 0, true)
+        RETURNING id INTO item_id;
+        INSERT INTO product_categories (product_id, cat_id) VALUES (item_id, root_id);
+        INSERT INTO product_images (product_id, image_url, is_primary)
+        VALUES (item_id, '/images/keyboard.svg', true) RETURNING id INTO primary_image_id;
+        INSERT INTO product_variants (product_id, image_id, sku, price, quantity)
+        VALUES (item_id, primary_image_id, 'NT26PAYOS2000', 2000, 100) RETURNING id INTO variant_id;
+        INSERT INTO variant_specifications (variant_id, specification_name, specification_value) VALUES
+            (variant_id, 'kind', 'keyboard'), (variant_id, 'configuration', 'Kiểm thử thanh toán');
+        UPDATE products SET default_variant_id = variant_id WHERE id = item_id;
+    END IF;
+
     RAISE NOTICE 'Inserted % products; existing NT26 families were preserved.', inserted;
 END $$;
 COMMIT;

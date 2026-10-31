@@ -84,15 +84,14 @@ The mandatory JPA policy is recorded in `AGENTS.md`.
 
 ## Development seed
 
-After starting the backend once so Flyway initializes the database, run this from
-another terminal in the backend directory:
+When the backend runs with the `local` profile, `CatalogSeedRunner` executes the
+existing `scripts/seed-catalog.sql` automatically after Flyway and JPA initialize.
+The SQL is packaged in the application jar, so startup does not require Docker or
+`psql`. Set `CATALOG_SEED_ENABLED=false` in `backend/.env` and restart the backend
+to disable automatic seeding; other profiles do not run it.
 
-```powershell
-.\scripts\seed-catalog.ps1
-```
-
-The seed creates 100 sample products, 300 variants, 12 brands, 11 categories and
-200 product images. Products have a direct brand/default variant, and variants
+The seed creates 101 sample products, 301 variants, 12 brands, 11 categories and
+201 product images. SKU `NT26PAYOS2000` is a payment test product priced at 2,000 VND with an initial quantity of 100. Products have a direct brand/default variant, and variants
 have their own image and technical specifications. SKUs use the reserved `NT26`
 prefix. Product names, prices and configurations are illustrative development
 data; images reference the existing frontend SVG illustrations.
@@ -102,7 +101,7 @@ No users, orders, reviews, promotions or aftersale requests are fabricated. The
 SQL runs in one transaction under an advisory lock. Re-running skips existing
 NT26 product families and preserves manual changes to stock, prices and defaults;
 it does not repair partially deleted sample families or reset the database.
-The PowerShell runner reads the ignored `.env` and transfers SQL as UTF-8 bytes.
+The optional PowerShell seed runner uses Docker; the automatic runner reads the packaged SQL as UTF-8.
 
 ## API đọc công khai
 

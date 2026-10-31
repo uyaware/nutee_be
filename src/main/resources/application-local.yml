@@ -11,6 +11,8 @@ springdoc:
     enabled: true
 
 app:
+  seed:
+    catalog-enabled: ${CATALOG_SEED_ENABLED:true}
   docs-enabled: true
   security:
     cookies:
