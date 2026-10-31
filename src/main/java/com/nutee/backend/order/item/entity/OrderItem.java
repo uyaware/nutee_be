@@ -39,6 +39,17 @@ public class OrderItem {
     private BigDecimal calculatedPrice;
     @Column(name = "warranty_expired_at")
     private Instant warrantyExpiredAt;
+    @Column(name = "product_name") private String productName;
+    @Column(name = "sku_snapshot", length = 16) private String skuSnapshot;
+    @Column(name = "image_url", columnDefinition = "text") private String imageUrl;
+    @Column(columnDefinition = "text") private String configuration;
+    @Column(name = "original_price") private Long originalPrice;
+
+    public OrderItem(int orderId, ProductVariant variant, int quantity, long price, long originalPrice,
+            String name, String sku, String image, String configuration) {
+        this.orderId = orderId; this.variant = variant; this.quantity = quantity; calculatedPrice = BigDecimal.valueOf(price);
+        this.originalPrice = originalPrice; productName = name; skuSnapshot = sku; imageUrl = image; this.configuration = configuration;
+    }
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
