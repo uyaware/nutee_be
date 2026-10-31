@@ -41,17 +41,23 @@ public class PayOSAdapter implements PaymentGateway {
         requireEnabled();
         try {
             var response = client.paymentRequests().create(CreatePaymentLinkRequest.builder().orderCode(request.orderCode()).amount(request.amount())
-                    .description("N" + Long.toString(request.orderCode(), 36).toUpperCase(java.util.Locale.ROOT))
+                    .description(request.transferContent())
                     .returnUrl(request.returnUrl()).cancelUrl(request.cancelUrl()).expiredAt(request.expiresAt().getEpochSecond()).build());
             if (response.getOrderCode() == null || response.getAmount() == null || response.getOrderCode() != request.orderCode() || response.getAmount() != request.amount() || !"VND".equals(response.getCurrency()) || !validId(response.getPaymentLinkId())) throw invalidProvider();
             URI url = URI.create(response.getCheckoutUrl());
             if (!"https".equals(url.getScheme()) || !"pay.payos.vn".equals(url.getHost()) || url.getUserInfo() != null) throw invalidProvider();
-            return new Link(response.getOrderCode(), response.getAmount(), response.getCurrency(), response.getPaymentLinkId(), response.getCheckoutUrl());
+            String qrCode = response.getQrCode();
+            if (qrCode == null || qrCode.length() > 1024 || !qrCode.startsWith("000201")) throw invalidProvider();
+            if (!request.transferContent().equals(response.getDescription()) || blank(response.getAccountNumber())
+                    || blank(response.getAccountName()) || blank(response.getBin())) throw invalidProvider();
+            return new Link(response.getOrderCode(), response.getAmount(), response.getCurrency(), response.getPaymentLinkId(), response.getCheckoutUrl(), qrCode,
+                    response.getBin(), response.getAccountNumber(), response.getAccountName(), response.getDescription());
         } catch (PayOSException exception) {
             // The same code is retried, never a new payment attempt after an uncertain response.
             var known = retrieve(request.orderCode());
             if (known.amount() != request.amount()) throw invalidProvider();
-            return new Link(known.orderCode(), known.amount(), "VND", known.externalId(), "https://pay.payos.vn/web/" + known.externalId());
+            return new Link(known.orderCode(), known.amount(), "VND", known.externalId(), "https://pay.payos.vn/web/" + known.externalId(), null,
+                    null, null, null, null);
         } catch (IllegalArgumentException | NullPointerException exception) { throw invalidProvider(); }
     }
     @Override public State retrieve(long orderCode) {

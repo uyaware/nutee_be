@@ -23,11 +23,15 @@ class PayOSLiveIT {
         long code = 9_000_000_000L + new SecureRandom().nextInt(900_000_000);
         String returnUrl = properties.frontendUrl() + "/orders/0/payment";
         var link = adapter.create(new PaymentGateway.Request(code, 2000,
-                Instant.now().plusSeconds(300), returnUrl, returnUrl));
+                Instant.now().plusSeconds(300), returnUrl, returnUrl, "LIVE" + code));
         try {
             assertThat(link.orderCode()).isEqualTo(code);
             assertThat(link.amount()).isEqualTo(2000);
             assertThat(link.currency()).isEqualTo("VND");
+            assertThat(link.qrCode()).startsWith("000201");
+            assertThat(link.transferContent()).isEqualTo("LIVE" + code);
+            assertThat(link.accountNumber()).isNotBlank();
+            assertThat(link.accountName()).isNotBlank();
             assertThat(link.checkoutUrl()).startsWith("https://pay.payos.vn/");
             var state = adapter.retrieve(code);
             assertThat(state.externalId()).isEqualTo(link.externalId());

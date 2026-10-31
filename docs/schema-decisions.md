@@ -2,7 +2,7 @@
 
 Source: [NUTEE_EERD_ERD.drawio](https://drive.google.com/file/d/1hmp8WFtYhvkK1jkg758HYj5xaVGpoJLy/view),
 ERD page `i9jcEZAXrc9SuSMo_mB8`. The physical ERD is synchronized to the
-current V1–V3 baseline; the conceptual EERD page remains separate.
+V1–V4 schema; the conceptual EERD page remains separate.
 
 ## Authorized reset
 
@@ -30,7 +30,7 @@ a sequence/default in V1. Expression/partial uniqueness (case-insensitive user
 identities, reset hashes, default addresses, primary images) uses explicit unique
 indexes in V3 because it cannot be declared as a plain UNIQUE table constraint.
 
-`docs/schema.sql` includes these three files for psql review/test bootstrap:
+`docs/schema.sql` includes the baseline and V4 upgrade for psql review/test bootstrap:
 
 ```powershell
 psql <connection options> --single-transaction --file=docs/schema.sql
@@ -137,8 +137,8 @@ Run the suite using JDK 21 and Docker with PostgreSQL 16 containers:
 .\mvnw.cmd verify
 ```
 
-The integration schema contains 24 domain tables plus `flyway_schema_history`.
-Flyway must apply the three baseline migrations, validate their checksums, and apply
+The integration schema contains 23 domain tables plus `flyway_schema_history` after V4.
+Flyway must apply the three baseline migrations and V4, validate their checksums, and apply
 zero migrations on a second run. The separate migration smoke-test fixture is
 retained because it tests Flyway infrastructure and is not an application schema
 migration or catalog seed.
@@ -157,8 +157,14 @@ Promotion uses the existing products.promotion_id and voucher recipients use use
 Quote does not create orders or consume quota. Checkout creates orders and holds quota
 under a voucher row lock, together with stock reservations and a unique per-user idempotency key.
 The baseline retains price/product snapshots without copying delivery contact/address fields.
-Profile/address edits affect delivery details displayed on old orders; transaction_logs stores
-the stable payOS session and payment_events stores deduplicated callbacks. Order cancellation
+Profile/address edits affect delivery details displayed on old orders. V4 moves the
+stable payOS code, QR, bank account and transfer content into orders; transaction_logs
+stores each verified webhook delivery and its processing result. It removes payment_events
+after preserving old events in transaction_logs, and drops the lease/external ID fields.
+Old session audit rows remain explicitly marked legacy_session; unavailable old webhook
+payloads/headers are not fabricated. Payment confirmation locks orders and skips paid orders.
+New transfer descriptions equal orders.order_code; legacy QRs keep their original known description.
+Order cancellation
 uses the locked order status to prevent releasing stock twice without an inventory_released column.
 See [Payment API](payments-api.md) for transaction, cancellation and reconciliation rules.
 See [Discount API and seed](discounts-api.md).

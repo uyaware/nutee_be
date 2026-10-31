@@ -105,7 +105,7 @@ public class OrderService {
                 item.getProductName() == null ? item.getVariant().getProduct().getName() : item.getProductName(), item.getSkuSnapshot(), item.getImageUrl(), item.getConfiguration(), item.getQuantity(), item.getCalculatedPrice(),
                 item.getOriginalPrice() == null ? item.getCalculatedPrice() : java.math.BigDecimal.valueOf(item.getOriginalPrice()))).toList();
         return new OrderResponse(order.getId(), order.getOrderCode(), order.getStatus(), order.getPaymentMethod(), order.getPaymentStatus(), amount(order.getSubtotal()), order.getPromotionDiscount(), order.getVoucherDiscount(), amount(order.getDiscount()),
-                order.getShipping() == null ? 0 : order.getShipping(), amount(order.getTotal()), order.getAddressId(), user == null ? null : user.getFullName(), user == null ? null : user.getPhone(), addressLine, order.getNote(), order.getCreatedAt(), order.getPaymentExpiresAt(), rows);
+                order.getShipping() == null ? 0 : order.getShipping(), amount(order.getTotal()), order.getAddressId(), user == null ? null : user.getFullName(), user == null ? null : user.getPhone(), addressLine, order.getNote(), order.getCreatedAt(), order.getPaymentExpiresAt(), rows, null, null);
     }
     private java.math.BigDecimal amount(java.math.BigDecimal value) { return value == null ? java.math.BigDecimal.ZERO : value; }
 }

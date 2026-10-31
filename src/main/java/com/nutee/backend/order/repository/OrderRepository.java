@@ -23,8 +23,12 @@ public interface OrderRepository extends JpaRepository<Order, Integer> {
             + "and lower(o.orderCode) like :search escape '!' order by o.createdAt desc, o.id desc")
     Page<Order> history(UUID userId, String status, String search, Pageable pageable);
     @Query("select o.id from Order o where o.idempotencyKey is not null and o.paymentMethod = 'qr' and o.status = 'pending' "
-            + "and o.paymentStatus = 'pending' and o.paymentExpiresAt <= :now and not exists (select p.id from PaymentAttempt p where p.orderId = o.id) order by o.id")
+            + "and o.paymentStatus = 'pending' and o.paymentExpiresAt <= :now and o.paymentAttemptCount = 0 order by o.id")
     List<Integer> expiredUnstarted(java.time.Instant now, Pageable pageable);
+    @Query("select o.id from Order o where o.gatewayOrderCode = :code")
+    Optional<Integer> orderIdForPaymentCode(long code);
+    List<Order> findByPaymentMethodAndPaymentAttemptCountGreaterThanAndPaymentStatusInOrderByUpdatedAtAsc(
+            String method, int count, List<String> statuses, Pageable pageable);
     @Lock(LockModeType.PESSIMISTIC_WRITE) Optional<Order> findLockedById(int id);
     @Query("select count(o) from Order o where o.voucherId = :voucherId and (o.status is null or lower(o.status) not in ('cancelled', 'canceled'))")
     long countVoucherUses(UUID voucherId);

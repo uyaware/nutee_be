@@ -12,6 +12,9 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import lombok.Getter;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
+import com.nutee.backend.payment.port.PaymentGateway;
 
 /** Đơn giữ snapshot giá, khóa địa chỉ và idempotency; liên hệ lấy từ user. */
 @Entity @Table(name = "orders") @Getter @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -38,6 +41,15 @@ public class Order {
     @Column(name = "payment_status") private String paymentStatus;
     @Column(name = "payment_amount", precision = 18, scale = 2) private BigDecimal paymentAmount;
     @Column(name = "payment_expired_at") private Instant paymentExpiresAt;
+    @Generated(event = EventType.INSERT)
+    @Column(name = "gateway_order_code", insertable = false, updatable = false) private Long gatewayOrderCode;
+    @Column(name = "checkout_url", columnDefinition = "text") private String checkoutUrl;
+    @Column(name = "qr_code", columnDefinition = "text") private String qrCode;
+    @Column(name = "bank_bin", length = 20) private String bankBin;
+    @Column(name = "account_number", length = 100) private String accountNumber;
+    @Column(name = "account_name") private String accountName;
+    @Column(name = "transfer_content") private String transferContent;
+    @Column(name = "payment_attempt_count") private int paymentAttemptCount;
     @Column(columnDefinition = "text") private String note;
     @CreationTimestamp @Column(name = "created_at", updatable = false) private Instant createdAt;
     @UpdateTimestamp @Column(name = "updated_at") private Instant updatedAt;
@@ -60,10 +72,39 @@ public class Order {
 
     /** Xác nhận chỉ từ provider đã xác minh; tiền đến sau khi đã hoàn kho cần đối soát thủ công. */
     public void paid() {
+        if ("paid".equals(paymentStatus)) return;
         paymentAmount = total;
         if ("cancelled".equals(status)) { paymentStatus = "review"; return; }
         paymentStatus = "paid"; status = "confirmed";
     }
     public void review() { if (!"paid".equals(paymentStatus)) paymentStatus = "review"; }
     public void cancelled() { status = "cancelled"; paymentStatus = "qr".equals(paymentMethod) ? "cancelled" : "unpaid"; }
+
+    /** Đếm lần tạo để phản hồi cũ không ghi đè lần thử mới; service giữ khóa dòng đơn. */
+    public int startPayment() {
+        paymentStatus = "creating";
+        transferContent = orderCode;
+        updatedAt = Instant.now();
+        return ++paymentAttemptCount;
+    }
+
+    public void paymentLinked(PaymentGateway.Link link) {
+        checkoutUrl = link.checkoutUrl();
+        if (link.qrCode() != null) {
+            qrCode = link.qrCode();
+            bankBin = link.bankBin();
+            accountNumber = link.accountNumber();
+            accountName = link.accountName();
+            transferContent = link.transferContent();
+        }
+        if (!java.util.Set.of("paid", "review", "cancelled", "expired").contains(paymentStatus)) paymentStatus = "pending";
+    }
+
+    public void paymentFailed() {
+        if (checkoutUrl == null && !java.util.Set.of("paid", "review", "cancelled", "expired").contains(paymentStatus)) paymentStatus = "error";
+    }
+
+    public void paymentExpired() { paymentStatus = "expired"; }
+    public void paymentPending() { paymentStatus = "pending"; }
+    public void touchPayment() { updatedAt = Instant.now(); }
 }

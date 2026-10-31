@@ -61,14 +61,14 @@ class NuteeApplicationIT {
         assertThat(entityManagerFactory.getMetamodel().getEntities()).extracting(entity -> entity.getName())
                 .containsExactlyInAnyOrder("User", "AuthProvider", "Brand", "Category", "Product",
                         "ProductVariant", "ProductImage", "VariantSpecification", "OrderItem",
-                        "ProductReview", "ProductReviewHistory", "CartItem", "UserAddress", "Promotion", "Voucher", "Order", "PaymentAttempt", "PaymentEvent");
-        assertThat(flyway.info().applied()).hasSize(3);
+                        "ProductReview", "ProductReviewHistory", "CartItem", "UserAddress", "Promotion", "Voucher", "Order", "TransactionLog");
+        assertThat(flyway.info().applied()).hasSize(4);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
-        assertThat(tables).hasSize(25).contains("flyway_schema_history", "users", "auth_providers",
+        assertThat(tables).hasSize(24).contains("flyway_schema_history", "users", "auth_providers",
                 "orders", "order_items", "product_variants", "event_logs",
-                "variant_specifications", "transaction_logs", "payment_events")
-                .doesNotContain("payment_attempts", "refresh_sessions", "product_brands", "product_specifications", "variant_images");
+                "variant_specifications", "transaction_logs")
+                .doesNotContain("payment_events", "payment_attempts", "refresh_sessions", "product_brands", "product_specifications", "variant_images");
         assertThat(jdbc.queryForObject("SELECT data_type FROM information_schema.columns "
                 + "WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'refresh_token'",
                 String.class)).isEqualTo("text");
@@ -91,11 +91,40 @@ class NuteeApplicationIT {
         jdbc.update("INSERT INTO users (id, username, email) VALUES ('10000000-0000-0000-0000-000000000001', 'baseline', 'baseline@example.invalid')");
         jdbc.update("INSERT INTO orders (order_code, user_id) VALUES ('BASELINE01', '10000000-0000-0000-0000-000000000001')");
         Integer id = jdbc.queryForObject("SELECT id FROM orders WHERE order_code = 'BASELINE01'", Integer.class);
-        jdbc.update("INSERT INTO transaction_logs (order_id, amount, expires_at) VALUES (?, 1000, now() + interval '1 hour')", id);
-        assertThat(jdbc.queryForObject("SELECT gateway_order_code FROM transaction_logs WHERE order_id = ?", Long.class, id))
+        Long code = jdbc.queryForObject("SELECT gateway_order_code FROM orders WHERE id = ?", Long.class, id);
+        assertThat(code)
                 .isGreaterThanOrEqualTo(1000000L);
-        assertThatThrownBy(() -> jdbc.update("INSERT INTO transaction_logs (order_id, amount, expires_at) VALUES (?, 1000, now() + interval '1 hour')", id))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        for (int i = 0; i < 2; i++) jdbc.update("INSERT INTO transaction_logs (order_id, gateway_order_code, amount, reference, status) VALUES (?, ?, 1000, 'same-ref', 'duplicate')", id, code);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs WHERE order_id = ?", Integer.class, id)).isEqualTo(2);
+        assertThat(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' "
+                + "AND table_name = 'transaction_logs' AND column_name IN ('lease_token', 'lease_until', 'external_id', 'qr_code', 'checkout_url')", String.class)).isEmpty();
+        assertThat(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' "
+                + "AND table_name = 'orders'", String.class)).contains("qr_code", "account_number", "account_name", "transfer_content");
+    }
+
+    @Test
+    void paymentUpgradePreservesExistingOrderDetailsAndEventLogs() {
+        String schema = "payment_upgrade";
+        Flyway old = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema).defaultSchema(schema).target("3").load();
+        old.migrate();
+        jdbc.execute("INSERT INTO payment_upgrade.users (id, username, email) VALUES ('20000000-0000-0000-0000-000000000001', 'upgrade', 'upgrade@example.invalid')");
+        jdbc.execute("INSERT INTO payment_upgrade.orders (order_code, user_id, payment_method, payment_status) VALUES ('UPGRADE001', '20000000-0000-0000-0000-000000000001', 'qr', 'pending')");
+        jdbc.execute("INSERT INTO payment_upgrade.transaction_logs (order_id, amount, status, expires_at, checkout_url, raw_body) VALUES (1, 1000, 'pending', now() + interval '1 hour', 'https://pay.payos.vn/web/old', '{\"qrCode\":\"000201OLD\",\"accountNumber\":\"123456\",\"description\":\"OLD CONTENT\"}')");
+        jdbc.execute("INSERT INTO payment_upgrade.payment_events (id, gateway_order_code, external_id, amount, currency, result_code, decision) SELECT 'payos:old-ref', gateway_order_code, 'old', 1000, 'VND', '00', 'paid' FROM payment_upgrade.transaction_logs");
+        Long code = jdbc.queryForObject("SELECT gateway_order_code FROM payment_upgrade.transaction_logs", Long.class);
+        Flyway upgrade = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema).defaultSchema(schema).load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT gateway_order_code FROM payment_upgrade.orders", Long.class)).isEqualTo(code);
+        assertThat(jdbc.queryForObject("SELECT qr_code FROM payment_upgrade.orders", String.class)).isEqualTo("000201OLD");
+        assertThat(jdbc.queryForObject("SELECT transfer_content FROM payment_upgrade.orders", String.class)).isEqualTo("OLD CONTENT");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_upgrade.transaction_logs", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_upgrade.transaction_logs WHERE raw_body IS NOT NULL", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM payment_upgrade.transaction_logs WHERE reference = 'payos:old-ref'", String.class)).isEqualTo("paid");
+        assertThat(jdbc.queryForObject("SELECT to_regclass('payment_upgrade.payment_events') IS NULL", Boolean.class)).isTrue();
+        upgrade.validate();
+        assertThat(upgrade.migrate().migrationsExecuted).isZero();
     }
 
     @Test

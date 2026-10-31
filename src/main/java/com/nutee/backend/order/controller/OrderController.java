@@ -3,6 +3,7 @@ package com.nutee.backend.order.controller;
 import com.nutee.backend.common.response.PageResponse;
 import com.nutee.backend.order.dto.*;
 import com.nutee.backend.order.service.OrderService;
+import com.nutee.backend.order.service.CheckoutService;
 import com.nutee.backend.payment.adapter.PaymentProperties;
 import com.nutee.backend.payment.port.PaymentGateway;
 import com.nutee.backend.payment.service.*;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class OrderController {
     private final OrderService orders;
+    private final CheckoutService checkout;
     private final PaymentService payments;
     private final PaymentTransactions transactions;
     private final PaymentProperties properties;
@@ -35,7 +37,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> create(@AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody CreateOrderRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore())
-                .body(orders.create(UUID.fromString(jwt.getSubject()), request));
+                .body(checkout.create(UUID.fromString(jwt.getSubject()), request));
     }
 
     @GetMapping("/orders")
@@ -53,18 +55,18 @@ public class OrderController {
     }
 
     @PostMapping("/orders/{id}/payment")
-    public PaymentTransactions.View pay(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
-        return payments.create(UUID.fromString(jwt.getSubject()), id);
+    public ResponseEntity<PaymentTransactions.View> pay(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payments.create(UUID.fromString(jwt.getSubject()), id));
     }
 
     @GetMapping("/orders/{id}/payment")
-    public PaymentTransactions.View payment(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
-        return payments.get(UUID.fromString(jwt.getSubject()), id);
+    public ResponseEntity<PaymentTransactions.View> payment(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payments.get(UUID.fromString(jwt.getSubject()), id));
     }
 
     @PostMapping("/orders/{id}/payment/refresh")
-    public PaymentTransactions.View refresh(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
-        return payments.refresh(UUID.fromString(jwt.getSubject()), id);
+    public ResponseEntity<PaymentTransactions.View> refresh(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payments.refresh(UUID.fromString(jwt.getSubject()), id));
     }
 
     @PostMapping("/orders/{id}/cancel")

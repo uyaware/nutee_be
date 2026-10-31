@@ -1,0 +1,1124 @@
+{
+    "source": "https://drive.google.com/file/d/1hmp8WFtYhvkK1jkg758HYj5xaVGpoJLy/view",
+    "page": "i9jcEZAXrc9SuSMo_mB8",
+    "tables": [
+        {
+            "name": "users",
+            "constraints": "ADD CONSTRAINT pk_users PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN username SET NOT NULL\nALTER COLUMN email SET NOT NULL\nALTER COLUMN email_verified SET NOT NULL\nALTER COLUMN role SET NOT NULL\nALTER COLUMN is_active SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE UNIQUE INDEX uk_users_email_ci ON public.users USING btree (lower((email)::text))\nCREATE UNIQUE INDEX uk_users_password_reset_hash ON public.users USING btree (password_reset_hash) WHERE (password_reset_hash IS NOT NULL)\nCREATE UNIQUE INDEX uk_users_username_ci ON public.users USING btree (lower((username)::text))",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "UUID NN",
+                    "definition": "id UUID"
+                },
+                {
+                    "name": "username",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "username VARCHAR(255)"
+                },
+                {
+                    "name": "email",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "email VARCHAR(255)"
+                },
+                {
+                    "name": "password",
+                    "type": "VARCHAR(255)",
+                    "definition": "password VARCHAR(255)"
+                },
+                {
+                    "name": "refresh_token",
+                    "type": "TEXT",
+                    "definition": "refresh_token TEXT"
+                },
+                {
+                    "name": "password_reset_hash",
+                    "type": "VARCHAR(64)",
+                    "definition": "password_reset_hash VARCHAR(64)"
+                },
+                {
+                    "name": "password_reset_expires_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "password_reset_expires_at TIMESTAMPTZ"
+                },
+                {
+                    "name": "full_name",
+                    "type": "VARCHAR(100)",
+                    "definition": "full_name VARCHAR(100)"
+                },
+                {
+                    "name": "phone",
+                    "type": "VARCHAR(10)",
+                    "definition": "phone VARCHAR(10)"
+                },
+                {
+                    "name": "email_verified",
+                    "type": "BOOLEAN NN",
+                    "definition": "email_verified BOOLEAN DEFAULT false"
+                },
+                {
+                    "name": "image_url",
+                    "type": "TEXT",
+                    "definition": "image_url TEXT"
+                },
+                {
+                    "name": "role",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "role VARCHAR(255) DEFAULT 'CUSTOMER'"
+                },
+                {
+                    "name": "is_active",
+                    "type": "BOOLEAN NN",
+                    "definition": "is_active BOOLEAN DEFAULT true"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "user_addresses",
+            "constraints": "ADD CONSTRAINT fk_user_addresses_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT pk_user_addresses PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN user_id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_user_addresses_user_id ON public.user_addresses USING btree (user_id)\nCREATE UNIQUE INDEX uk_user_addresses_default ON public.user_addresses USING btree (user_id) WHERE is_default",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "province_city",
+                    "type": "VARCHAR(255)",
+                    "definition": "province_city VARCHAR(255)"
+                },
+                {
+                    "name": "ward_commune",
+                    "type": "VARCHAR(255)",
+                    "definition": "ward_commune VARCHAR(255)"
+                },
+                {
+                    "name": "street",
+                    "type": "VARCHAR(255)",
+                    "definition": "street VARCHAR(255)"
+                },
+                {
+                    "name": "is_default",
+                    "type": "BOOLEAN",
+                    "definition": "is_default BOOLEAN"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "auth_providers",
+            "constraints": "ADD CONSTRAINT fk_auth_providers_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT pk_auth_providers PRIMARY KEY (id)\nADD CONSTRAINT uk_auth_providers_provider_identity UNIQUE (provider, provider_user_id)\nADD CONSTRAINT uk_auth_providers_user_provider UNIQUE (user_id, provider)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN user_id SET NOT NULL\nALTER COLUMN provider SET NOT NULL\nALTER COLUMN provider_user_id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "provider",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "provider VARCHAR(255)"
+                },
+                {
+                    "name": "provider_user_id",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "provider_user_id VARCHAR(255)"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "products",
+            "constraints": "ADD CONSTRAINT ck_products_avg_rating CHECK (((avg_rating >= (0)::numeric) AND (avg_rating <= (5)::numeric)))\nADD CONSTRAINT ck_products_sold_count CHECK ((sold_count >= 0))\nADD CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands(id)\nADD CONSTRAINT fk_products_default_variant FOREIGN KEY (id, default_variant_id) REFERENCES product_variants(product_id, id)\nADD CONSTRAINT fk_products_promotion FOREIGN KEY (promotion_id) REFERENCES promotions(id)\nADD CONSTRAINT pk_products PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_products_brand_id ON public.products USING btree (brand_id)\nCREATE INDEX idx_products_default_variant_id ON public.products USING btree (default_variant_id) WHERE (default_variant_id IS NOT NULL)\nCREATE INDEX idx_products_promotion_id ON public.products USING btree (promotion_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "promotion_id",
+                    "type": "UUID",
+                    "definition": "promotion_id UUID"
+                },
+                {
+                    "name": "brand_id",
+                    "type": "INT",
+                    "definition": "brand_id INT"
+                },
+                {
+                    "name": "default_variant_id",
+                    "type": "INT",
+                    "definition": "default_variant_id INT"
+                },
+                {
+                    "name": "name",
+                    "type": "VARCHAR(255)",
+                    "definition": "name VARCHAR(255)"
+                },
+                {
+                    "name": "description",
+                    "type": "TEXT",
+                    "definition": "description TEXT"
+                },
+                {
+                    "name": "avg_rating",
+                    "type": "NUMERIC(2,1)",
+                    "definition": "avg_rating NUMERIC(2,1)"
+                },
+                {
+                    "name": "sold_count",
+                    "type": "INT",
+                    "definition": "sold_count INT"
+                },
+                {
+                    "name": "is_published",
+                    "type": "BOOLEAN",
+                    "definition": "is_published BOOLEAN"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "product_images",
+            "constraints": "ADD CONSTRAINT fk_product_images_product FOREIGN KEY (product_id) REFERENCES products(id)\nADD CONSTRAINT pk_product_images PRIMARY KEY (id)\nADD CONSTRAINT uk_product_images_product_id_id UNIQUE (product_id, id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN product_id SET NOT NULL\nALTER COLUMN is_primary SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE UNIQUE INDEX uk_product_images_primary ON public.product_images USING btree (product_id) WHERE is_primary",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "product_id",
+                    "type": "INT NN",
+                    "definition": "product_id INT"
+                },
+                {
+                    "name": "image_url",
+                    "type": "TEXT",
+                    "definition": "image_url TEXT"
+                },
+                {
+                    "name": "is_primary",
+                    "type": "BOOLEAN NN",
+                    "definition": "is_primary BOOLEAN DEFAULT false"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "variant_specifications",
+            "constraints": "ADD CONSTRAINT ck_variant_specifications_name CHECK ((btrim((specification_name)::text) <> ''::text))\nADD CONSTRAINT ck_variant_specifications_value CHECK ((btrim(specification_value) <> ''::text))\nADD CONSTRAINT fk_variant_specifications_variant FOREIGN KEY (variant_id) REFERENCES product_variants(id)\nADD CONSTRAINT pk_variant_specifications PRIMARY KEY (id)\nADD CONSTRAINT uk_variant_specifications_name UNIQUE (variant_id, specification_name)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN variant_id SET NOT NULL\nALTER COLUMN specification_name SET NOT NULL\nALTER COLUMN specification_value SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "variant_id",
+                    "type": "INT NN",
+                    "definition": "variant_id INT"
+                },
+                {
+                    "name": "specification_name",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "specification_name VARCHAR(255)"
+                },
+                {
+                    "name": "specification_value",
+                    "type": "TEXT NN",
+                    "definition": "specification_value TEXT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "brands",
+            "constraints": "ADD CONSTRAINT pk_brands PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "name",
+                    "type": "VARCHAR(255)",
+                    "definition": "name VARCHAR(255)"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "categories",
+            "constraints": "ADD CONSTRAINT ck_categories_parent CHECK ((parent <> id))\nADD CONSTRAINT fk_categories_parent FOREIGN KEY (parent) REFERENCES categories(id)\nADD CONSTRAINT pk_categories PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_categories_parent ON public.categories USING btree (parent)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "parent",
+                    "type": "INT",
+                    "definition": "parent INT"
+                },
+                {
+                    "name": "name",
+                    "type": "VARCHAR(255)",
+                    "definition": "name VARCHAR(255)"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "product_categories",
+            "constraints": "ADD CONSTRAINT fk_product_categories_category FOREIGN KEY (cat_id) REFERENCES categories(id)\nADD CONSTRAINT fk_product_categories_product FOREIGN KEY (product_id) REFERENCES products(id)\nADD CONSTRAINT pk_product_categories PRIMARY KEY (product_id, cat_id)\nALTER COLUMN product_id SET NOT NULL\nALTER COLUMN cat_id SET NOT NULL\nCREATE INDEX idx_product_categories_cat_id ON public.product_categories USING btree (cat_id)",
+            "columns": [
+                {
+                    "name": "product_id",
+                    "type": "INT NN",
+                    "definition": "product_id INT"
+                },
+                {
+                    "name": "cat_id",
+                    "type": "INT NN",
+                    "definition": "cat_id INT"
+                }
+            ]
+        },
+        {
+            "name": "cart_items",
+            "constraints": "ADD CONSTRAINT ck_cart_items_quantity CHECK ((quantity > 0))\nADD CONSTRAINT fk_cart_items_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT fk_cart_items_variant FOREIGN KEY (variant_id) REFERENCES product_variants(id)\nADD CONSTRAINT pk_cart_items PRIMARY KEY (id)\nADD CONSTRAINT uk_cart_items_user_variant UNIQUE (user_id, variant_id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN user_id SET NOT NULL\nALTER COLUMN variant_id SET NOT NULL\nALTER COLUMN quantity SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_cart_items_variant_id ON public.cart_items USING btree (variant_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "variant_id",
+                    "type": "INT NN",
+                    "definition": "variant_id INT"
+                },
+                {
+                    "name": "sku",
+                    "type": "VARCHAR(16)",
+                    "definition": "sku VARCHAR(16)"
+                },
+                {
+                    "name": "quantity",
+                    "type": "INT NN",
+                    "definition": "quantity INT DEFAULT 1"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "reviews",
+            "constraints": "ADD CONSTRAINT fk_reviews_order_item FOREIGN KEY (order_item_id) REFERENCES order_items(id)\nADD CONSTRAINT pk_reviews PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN order_item_id SET NOT NULL\nCREATE INDEX idx_reviews_order_item_id ON public.reviews USING btree (order_item_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "order_item_id",
+                    "type": "INT NN",
+                    "definition": "order_item_id INT"
+                }
+            ]
+        },
+        {
+            "name": "orders",
+            "constraints": "ADD CONSTRAINT ck_orders_discount_amount CHECK ((discount_amount >= (0)::numeric))\nADD CONSTRAINT ck_orders_order_code CHECK ((btrim((order_code)::text) <> ''::text))\nADD CONSTRAINT ck_orders_payment_amount CHECK ((payment_amount >= (0)::numeric))\nADD CONSTRAINT ck_orders_payment_attempt_count CHECK ((payment_attempt_count >= 0))\nADD CONSTRAINT ck_orders_shipping_fee CHECK ((shipping_fee >= 0))\nADD CONSTRAINT ck_orders_sub_total CHECK ((sub_total >= (0)::numeric))\nADD CONSTRAINT ck_orders_total_amount CHECK ((total_amount >= (0)::numeric))\nADD CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT fk_orders_user_address FOREIGN KEY (user_address_id) REFERENCES user_addresses(id)\nADD CONSTRAINT fk_orders_voucher FOREIGN KEY (voucher_id) REFERENCES vouchers(id)\nADD CONSTRAINT pk_orders PRIMARY KEY (id)\nADD CONSTRAINT uk_orders_gateway_code UNIQUE (gateway_order_code)\nADD CONSTRAINT uk_orders_order_code UNIQUE (order_code)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN order_code SET NOT NULL\nALTER COLUMN user_id SET NOT NULL\nALTER COLUMN promotion_discount SET NOT NULL\nALTER COLUMN voucher_discount SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nALTER COLUMN gateway_order_code SET NOT NULL\nALTER COLUMN payment_attempt_count SET NOT NULL\nCREATE INDEX idx_orders_payment_reconcile ON public.orders USING btree (updated_at, id) WHERE (((payment_method)::text = 'qr'::text) AND (payment_attempt_count > 0) AND ((payment_status)::text = ANY ((ARRAY['pending'::character varying, 'error'::character varying, 'creating'::character varying, 'review'::character varying])::text[])))\nCREATE INDEX idx_orders_user_address_id ON public.orders USING btree (user_address_id)\nCREATE INDEX idx_orders_user_id ON public.orders USING btree (user_id)\nCREATE INDEX idx_orders_voucher_id ON public.orders USING btree (voucher_id)\nCREATE UNIQUE INDEX uk_orders_checkout_key ON public.orders USING btree (user_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "order_code",
+                    "type": "VARCHAR(10) NN",
+                    "definition": "order_code VARCHAR(10)"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "voucher_id",
+                    "type": "UUID",
+                    "definition": "voucher_id UUID"
+                },
+                {
+                    "name": "user_address_id",
+                    "type": "INT",
+                    "definition": "user_address_id INT"
+                },
+                {
+                    "name": "total_amount",
+                    "type": "NUMERIC(18,2)",
+                    "definition": "total_amount NUMERIC(18,2)"
+                },
+                {
+                    "name": "sub_total",
+                    "type": "NUMERIC(18,2)",
+                    "definition": "sub_total NUMERIC(18,2)"
+                },
+                {
+                    "name": "shipping_fee",
+                    "type": "INT",
+                    "definition": "shipping_fee INT"
+                },
+                {
+                    "name": "discount_amount",
+                    "type": "NUMERIC(18,2)",
+                    "definition": "discount_amount NUMERIC(18,2)"
+                },
+                {
+                    "name": "status",
+                    "type": "VARCHAR(255)",
+                    "definition": "status VARCHAR(255)"
+                },
+                {
+                    "name": "note",
+                    "type": "TEXT",
+                    "definition": "note TEXT"
+                },
+                {
+                    "name": "payment_method",
+                    "type": "VARCHAR(255)",
+                    "definition": "payment_method VARCHAR(255)"
+                },
+                {
+                    "name": "payment_amount",
+                    "type": "NUMERIC(18,2)",
+                    "definition": "payment_amount NUMERIC(18,2)"
+                },
+                {
+                    "name": "payment_status",
+                    "type": "VARCHAR(255)",
+                    "definition": "payment_status VARCHAR(255)"
+                },
+                {
+                    "name": "payment_description",
+                    "type": "TEXT",
+                    "definition": "payment_description TEXT"
+                },
+                {
+                    "name": "payment_expired_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "payment_expired_at TIMESTAMPTZ"
+                },
+                {
+                    "name": "idempotency_key",
+                    "type": "UUID",
+                    "definition": "idempotency_key UUID"
+                },
+                {
+                    "name": "request_hash",
+                    "type": "VARCHAR(64)",
+                    "definition": "request_hash VARCHAR(64)"
+                },
+                {
+                    "name": "promotion_discount",
+                    "type": "BIGINT NN",
+                    "definition": "promotion_discount BIGINT DEFAULT 0"
+                },
+                {
+                    "name": "voucher_discount",
+                    "type": "BIGINT NN",
+                    "definition": "voucher_discount BIGINT DEFAULT 0"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "gateway_order_code",
+                    "type": "BIGINT NN",
+                    "definition": "gateway_order_code BIGINT DEFAULT nextval('payment_gateway_order_code'::regclass)"
+                },
+                {
+                    "name": "checkout_url",
+                    "type": "TEXT",
+                    "definition": "checkout_url TEXT"
+                },
+                {
+                    "name": "qr_code",
+                    "type": "TEXT",
+                    "definition": "qr_code TEXT"
+                },
+                {
+                    "name": "bank_bin",
+                    "type": "VARCHAR(20)",
+                    "definition": "bank_bin VARCHAR(20)"
+                },
+                {
+                    "name": "account_number",
+                    "type": "VARCHAR(100)",
+                    "definition": "account_number VARCHAR(100)"
+                },
+                {
+                    "name": "account_name",
+                    "type": "VARCHAR(255)",
+                    "definition": "account_name VARCHAR(255)"
+                },
+                {
+                    "name": "transfer_content",
+                    "type": "VARCHAR(255)",
+                    "definition": "transfer_content VARCHAR(255)"
+                },
+                {
+                    "name": "payment_attempt_count",
+                    "type": "INT NN",
+                    "definition": "payment_attempt_count INT DEFAULT 0"
+                }
+            ]
+        },
+        {
+            "name": "order_histories",
+            "constraints": "ADD CONSTRAINT fk_order_histories_order FOREIGN KEY (order_id) REFERENCES orders(id)\nADD CONSTRAINT fk_order_histories_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)\nADD CONSTRAINT pk_order_histories PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN order_id SET NOT NULL\nALTER COLUMN updated_by SET NOT NULL\nCREATE INDEX idx_order_histories_order_id ON public.order_histories USING btree (order_id)\nCREATE INDEX idx_order_histories_updated_by ON public.order_histories USING btree (updated_by)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "order_id",
+                    "type": "INT NN",
+                    "definition": "order_id INT"
+                },
+                {
+                    "name": "updated_by",
+                    "type": "UUID NN",
+                    "definition": "updated_by UUID"
+                },
+                {
+                    "name": "order_status",
+                    "type": "VARCHAR(255)",
+                    "definition": "order_status VARCHAR(255)"
+                },
+                {
+                    "name": "occurred_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "occurred_at TIMESTAMPTZ"
+                }
+            ]
+        },
+        {
+            "name": "vouchers",
+            "constraints": "ADD CONSTRAINT ck_vouchers_max_discount CHECK (((max_discount IS NULL) OR (max_discount > 0)))\nADD CONSTRAINT ck_vouchers_min_order CHECK ((min_order >= 0))\nADD CONSTRAINT pk_vouchers PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN min_order SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE UNIQUE INDEX uk_vouchers_code_ci ON public.vouchers USING btree (upper(btrim((code)::text)))",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "UUID NN",
+                    "definition": "id UUID"
+                },
+                {
+                    "name": "code",
+                    "type": "VARCHAR(20)",
+                    "definition": "code VARCHAR(20)"
+                },
+                {
+                    "name": "applied_for",
+                    "type": "VARCHAR(255)",
+                    "definition": "applied_for VARCHAR(255)"
+                },
+                {
+                    "name": "type",
+                    "type": "VARCHAR(255)",
+                    "definition": "type VARCHAR(255)"
+                },
+                {
+                    "name": "value",
+                    "type": "INT",
+                    "definition": "value INT"
+                },
+                {
+                    "name": "is_active",
+                    "type": "BOOLEAN",
+                    "definition": "is_active BOOLEAN"
+                },
+                {
+                    "name": "start_date",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "start_date TIMESTAMPTZ"
+                },
+                {
+                    "name": "end_date",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "end_date TIMESTAMPTZ"
+                },
+                {
+                    "name": "quantity",
+                    "type": "INT",
+                    "definition": "quantity INT"
+                },
+                {
+                    "name": "max_uses_per_user",
+                    "type": "INT",
+                    "definition": "max_uses_per_user INT"
+                },
+                {
+                    "name": "min_order",
+                    "type": "BIGINT NN",
+                    "definition": "min_order BIGINT NOT NULL DEFAULT 0"
+                },
+                {
+                    "name": "max_discount",
+                    "type": "BIGINT",
+                    "definition": "max_discount BIGINT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "user_vouchers",
+            "constraints": "ADD CONSTRAINT fk_user_vouchers_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT fk_user_vouchers_voucher FOREIGN KEY (voucher_id) REFERENCES vouchers(id)\nADD CONSTRAINT pk_user_vouchers PRIMARY KEY (user_id, voucher_id)\nALTER COLUMN user_id SET NOT NULL\nALTER COLUMN voucher_id SET NOT NULL\nCREATE INDEX idx_user_vouchers_voucher_id ON public.user_vouchers USING btree (voucher_id)",
+            "columns": [
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "voucher_id",
+                    "type": "UUID NN",
+                    "definition": "voucher_id UUID"
+                }
+            ]
+        },
+        {
+            "name": "promotions",
+            "constraints": "ADD CONSTRAINT pk_promotions PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE UNIQUE INDEX uk_promotions_code_ci ON public.promotions USING btree (upper(btrim((code)::text)))",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "UUID NN",
+                    "definition": "id UUID"
+                },
+                {
+                    "name": "code",
+                    "type": "VARCHAR(20)",
+                    "definition": "code VARCHAR(20)"
+                },
+                {
+                    "name": "applied_for",
+                    "type": "VARCHAR(255)",
+                    "definition": "applied_for VARCHAR(255)"
+                },
+                {
+                    "name": "type",
+                    "type": "VARCHAR(255)",
+                    "definition": "type VARCHAR(255)"
+                },
+                {
+                    "name": "value",
+                    "type": "INT",
+                    "definition": "value INT"
+                },
+                {
+                    "name": "is_active",
+                    "type": "BOOLEAN",
+                    "definition": "is_active BOOLEAN"
+                },
+                {
+                    "name": "start_date",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "start_date TIMESTAMPTZ"
+                },
+                {
+                    "name": "end_date",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "end_date TIMESTAMPTZ"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "order_items",
+            "constraints": "ADD CONSTRAINT ck_order_items_calculated_price CHECK ((calculated_price >= (0)::numeric))\nADD CONSTRAINT ck_order_items_quantity CHECK ((quantity > 0))\nADD CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders(id)\nADD CONSTRAINT fk_order_items_variant FOREIGN KEY (variant_id) REFERENCES product_variants(id)\nADD CONSTRAINT pk_order_items PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN order_id SET NOT NULL\nALTER COLUMN variant_id SET NOT NULL\nALTER COLUMN quantity SET NOT NULL\nALTER COLUMN calculated_price SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_order_items_order_id ON public.order_items USING btree (order_id)\nCREATE INDEX idx_order_items_variant_id ON public.order_items USING btree (variant_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "order_id",
+                    "type": "INT NN",
+                    "definition": "order_id INT"
+                },
+                {
+                    "name": "variant_id",
+                    "type": "INT NN",
+                    "definition": "variant_id INT"
+                },
+                {
+                    "name": "quantity",
+                    "type": "INT NN",
+                    "definition": "quantity INT DEFAULT 1"
+                },
+                {
+                    "name": "calculated_price",
+                    "type": "NUMERIC(18, 2) NN",
+                    "definition": "calculated_price NUMERIC(18, 2)"
+                },
+                {
+                    "name": "warranty_expired_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "warranty_expired_at TIMESTAMPTZ"
+                },
+                {
+                    "name": "product_name",
+                    "type": "VARCHAR(255)",
+                    "definition": "product_name VARCHAR(255)"
+                },
+                {
+                    "name": "sku_snapshot",
+                    "type": "VARCHAR(16)",
+                    "definition": "sku_snapshot VARCHAR(16)"
+                },
+                {
+                    "name": "image_url",
+                    "type": "TEXT",
+                    "definition": "image_url TEXT"
+                },
+                {
+                    "name": "configuration",
+                    "type": "TEXT",
+                    "definition": "configuration TEXT"
+                },
+                {
+                    "name": "original_price",
+                    "type": "BIGINT",
+                    "definition": "original_price BIGINT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "aftersale_requests",
+            "constraints": "ADD CONSTRAINT fk_aftersale_requests_order_item FOREIGN KEY (order_item_id) REFERENCES order_items(id)\nADD CONSTRAINT pk_aftersale_requests PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN order_item_id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_aftersale_requests_order_item_id ON public.aftersale_requests USING btree (order_item_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "order_item_id",
+                    "type": "INT NN",
+                    "definition": "order_item_id INT"
+                },
+                {
+                    "name": "type",
+                    "type": "VARCHAR(255)",
+                    "definition": "type VARCHAR(255)"
+                },
+                {
+                    "name": "reason",
+                    "type": "TEXT",
+                    "definition": "reason TEXT"
+                },
+                {
+                    "name": "description",
+                    "type": "TEXT",
+                    "definition": "description TEXT"
+                },
+                {
+                    "name": "images",
+                    "type": "TEXT",
+                    "definition": "images TEXT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "aftersale_request_histories",
+            "constraints": "ADD CONSTRAINT fk_aftersale_request_histories_request FOREIGN KEY (request_id) REFERENCES aftersale_requests(id)\nADD CONSTRAINT fk_aftersale_request_histories_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT pk_aftersale_request_histories PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN request_id SET NOT NULL\nALTER COLUMN user_id SET NOT NULL\nCREATE INDEX idx_aftersale_request_histories_request_id ON public.aftersale_request_histories USING btree (request_id)\nCREATE INDEX idx_aftersale_request_histories_user_id ON public.aftersale_request_histories USING btree (user_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "request_id",
+                    "type": "INT NN",
+                    "definition": "request_id INT"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "request_status",
+                    "type": "VARCHAR(255)",
+                    "definition": "request_status VARCHAR(255)"
+                },
+                {
+                    "name": "occurred_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "occurred_at TIMESTAMPTZ"
+                }
+            ]
+        },
+        {
+            "name": "transaction_logs",
+            "constraints": "ADD CONSTRAINT ck_transaction_logs_amount CHECK ((amount >= 0))\nADD CONSTRAINT fk_transaction_logs_order FOREIGN KEY (order_id) REFERENCES orders(id)\nADD CONSTRAINT pk_transaction_logs PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN gateway_order_code SET NOT NULL\nALTER COLUMN provider SET NOT NULL\nALTER COLUMN amount SET NOT NULL\nALTER COLUMN currency SET NOT NULL\nALTER COLUMN status SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_transaction_logs_order ON public.transaction_logs USING btree (order_id, created_at)\nCREATE INDEX idx_transaction_logs_reference ON public.transaction_logs USING btree (provider, reference)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "order_id",
+                    "type": "INT",
+                    "definition": "order_id INT"
+                },
+                {
+                    "name": "gateway_order_code",
+                    "type": "BIGINT NN",
+                    "definition": "gateway_order_code BIGINT"
+                },
+                {
+                    "name": "provider",
+                    "type": "VARCHAR(20) NN",
+                    "definition": "provider VARCHAR(20) DEFAULT 'payos'::character varying"
+                },
+                {
+                    "name": "amount",
+                    "type": "BIGINT NN",
+                    "definition": "amount BIGINT"
+                },
+                {
+                    "name": "currency",
+                    "type": "VARCHAR(3) NN",
+                    "definition": "currency VARCHAR(3) DEFAULT 'VND'::character varying"
+                },
+                {
+                    "name": "status",
+                    "type": "VARCHAR(255) NN",
+                    "definition": "status VARCHAR(255) DEFAULT 'new'::character varying"
+                },
+                {
+                    "name": "raw_body",
+                    "type": "JSONB",
+                    "definition": "raw_body JSONB"
+                },
+                {
+                    "name": "request_header",
+                    "type": "TEXT",
+                    "definition": "request_header TEXT"
+                },
+                {
+                    "name": "error",
+                    "type": "TEXT",
+                    "definition": "error TEXT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "reference",
+                    "type": "VARCHAR(240)",
+                    "definition": "reference VARCHAR(240)"
+                },
+                {
+                    "name": "result_code",
+                    "type": "VARCHAR(20)",
+                    "definition": "result_code VARCHAR(20)"
+                }
+            ]
+        },
+        {
+            "name": "product_variants",
+            "constraints": "ADD CONSTRAINT ck_product_variants_price CHECK ((price >= 0))\nADD CONSTRAINT ck_product_variants_quantity CHECK ((quantity >= 0))\nADD CONSTRAINT ck_product_variants_sku CHECK ((btrim((sku)::text) <> ''::text))\nADD CONSTRAINT fk_product_variants_image FOREIGN KEY (product_id, image_id) REFERENCES product_images(product_id, id)\nADD CONSTRAINT fk_product_variants_product FOREIGN KEY (product_id) REFERENCES products(id)\nADD CONSTRAINT pk_product_variants PRIMARY KEY (id)\nADD CONSTRAINT uk_product_variants_product_id_id UNIQUE (product_id, id)\nADD CONSTRAINT uk_product_variants_sku UNIQUE (sku)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN product_id SET NOT NULL\nALTER COLUMN sku SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nALTER COLUMN updated_at SET NOT NULL\nCREATE INDEX idx_product_variants_image ON public.product_variants USING btree (image_id, product_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "product_id",
+                    "type": "INT NN",
+                    "definition": "product_id INT"
+                },
+                {
+                    "name": "image_id",
+                    "type": "INT",
+                    "definition": "image_id INT"
+                },
+                {
+                    "name": "sku",
+                    "type": "VARCHAR(16) NN",
+                    "definition": "sku VARCHAR(16)"
+                },
+                {
+                    "name": "price",
+                    "type": "INT",
+                    "definition": "price INT"
+                },
+                {
+                    "name": "quantity",
+                    "type": "INT",
+                    "definition": "quantity INT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                },
+                {
+                    "name": "updated_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "updated_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "review_histories",
+            "constraints": "ADD CONSTRAINT ck_review_histories_rating CHECK (((rating >= 1) AND (rating <= 5)))\nADD CONSTRAINT fk_review_histories_review FOREIGN KEY (review_id) REFERENCES reviews(id)\nADD CONSTRAINT fk_review_histories_user FOREIGN KEY (user_id) REFERENCES users(id)\nADD CONSTRAINT pk_review_histories PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL\nALTER COLUMN user_id SET NOT NULL\nALTER COLUMN review_id SET NOT NULL\nALTER COLUMN created_at SET NOT NULL\nCREATE INDEX idx_review_histories_latest ON public.review_histories USING btree (review_id, created_at DESC, id DESC)\nCREATE INDEX idx_review_histories_user_id ON public.review_histories USING btree (user_id)",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "SERIAL NN",
+                    "definition": "id SERIAL"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID NN",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "review_id",
+                    "type": "INT NN",
+                    "definition": "review_id INT"
+                },
+                {
+                    "name": "rating",
+                    "type": "INT",
+                    "definition": "rating INT"
+                },
+                {
+                    "name": "comment",
+                    "type": "TEXT",
+                    "definition": "comment TEXT"
+                },
+                {
+                    "name": "created_at",
+                    "type": "TIMESTAMPTZ NN",
+                    "definition": "created_at TIMESTAMPTZ DEFAULT now()"
+                }
+            ]
+        },
+        {
+            "name": "event_logs",
+            "constraints": "ADD CONSTRAINT pk_event_logs PRIMARY KEY (id)\nALTER COLUMN id SET NOT NULL",
+            "columns": [
+                {
+                    "name": "id",
+                    "type": "UUID NN",
+                    "definition": "id UUID"
+                },
+                {
+                    "name": "user_id",
+                    "type": "UUID",
+                    "definition": "user_id UUID"
+                },
+                {
+                    "name": "session_id",
+                    "type": "UUID",
+                    "definition": "session_id UUID"
+                },
+                {
+                    "name": "product_id",
+                    "type": "INT",
+                    "definition": "product_id INT"
+                },
+                {
+                    "name": "event_type",
+                    "type": "VARCHAR(100)",
+                    "definition": "event_type VARCHAR(100)"
+                },
+                {
+                    "name": "rating",
+                    "type": "INT",
+                    "definition": "rating INT"
+                },
+                {
+                    "name": "quantity",
+                    "type": "INT",
+                    "definition": "quantity INT"
+                },
+                {
+                    "name": "occurred_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "occurred_at TIMESTAMPTZ"
+                },
+                {
+                    "name": "received_at",
+                    "type": "TIMESTAMPTZ",
+                    "definition": "received_at TIMESTAMPTZ"
+                }
+            ]
+        }
+    ]
+}

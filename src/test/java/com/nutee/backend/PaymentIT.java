@@ -60,7 +60,7 @@ class PaymentIT {
     Cookie customer;
 
     @BeforeEach void setup() throws Exception {
-        jdbc.execute("TRUNCATE users, brands, categories, promotions, vouchers, payment_events RESTART IDENTITY CASCADE");
+        jdbc.execute("TRUNCATE users, brands, categories, promotions, vouchers, transaction_logs RESTART IDENTITY CASCADE");
         new ResourceDatabasePopulator(new ClassPathResource("db/fixture/catalog.sql")).execute(jdbc.getDataSource());
         deliveryAddress(OWNER);
         customer = cookie(OWNER);
@@ -70,7 +70,8 @@ class PaymentIT {
         when(gateway.create(any())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             PaymentGateway.Request request = call.getArgument(0);
-            return new PaymentGateway.Link(request.orderCode(), request.amount(), "VND", "link" + request.orderCode(), "https://pay.payos.vn/web/link" + request.orderCode());
+            assertThat(request.transferContent()).isEqualTo(transferContent(request.orderCode()));
+            return new PaymentGateway.Link(request.orderCode(), request.amount(), "VND", "link" + request.orderCode(), "https://pay.payos.vn/web/link" + request.orderCode(), "000201TEST", "970422", "113366668888", "NUTEE TEST", transferContent(request.orderCode()));
         });
     }
 
@@ -99,6 +100,53 @@ class PaymentIT {
         mvc.perform(get("/api/v1/orders").cookie(customer)).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(2));
     }
 
+    @Test void qrCheckoutCreatesPaymentAndPersistsQrForReloadAndRetry() throws Exception {
+        cart.add(OWNER, 11, 1);
+        var body = request("qr", 10025000);
+        String content = json.writeValueAsString(body);
+        var first = mvc.perform(post("/api/v1/orders").cookie(customer).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(content))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.payment.qrCode").value("000201TEST"))
+                .andExpect(jsonPath("$.payment.status").value("pending")).andReturn();
+        int id = json.readTree(first.getResponse().getContentAsByteArray()).get("id").asInt();
+        mvc.perform(get("/api/v1/orders/" + id + "/payment").cookie(customer))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.qrCode").value("000201TEST"))
+                .andExpect(jsonPath("$.accountNumber").value("113366668888"))
+                .andExpect(jsonPath("$.accountName").value("NUTEE TEST"))
+                .andExpect(jsonPath("$.transferContent").value(orders.get(OWNER, id).code()));
+        assertThat(jdbc.queryForObject("SELECT qr_code FROM orders WHERE id = ?", String.class, id)).isEqualTo("000201TEST");
+        User stranger = users.saveAndFlush(User.create("qr-stranger", "qr-stranger@example.invalid", "hash", "Other", false, null));
+        mvc.perform(get("/api/v1/orders/" + id + "/payment").cookie(cookie(stranger.getId())))
+                .andExpect(status().isNotFound());
+        assertThat(payments.get(OWNER, id).toString()).doesNotContain("000201TEST");
+        mvc.perform(post("/api/v1/orders").cookie(customer).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(content))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.payment.qrCode").value("000201TEST"));
+        verify(gateway, times(1)).create(any());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs", Integer.class)).isZero();
+    }
+
+    @Test void paymentFailureReturnsCreatedOrderAndAllowsSameOrderToRetry() throws Exception {
+        cart.add(OWNER, 11, 1);
+        var body = request("qr", 10025000);
+        doThrow(new ApiException(HttpStatus.BAD_GATEWAY, "Unavailable"))
+                .doAnswer(call -> {
+                    PaymentGateway.Request request = call.getArgument(0);
+                    return new PaymentGateway.Link(request.orderCode(), request.amount(), "VND",
+                            "retry-link", "https://pay.payos.vn/web/retry-link", "000201TEST", "970422", "113366668888", "NUTEE TEST", transferContent(request.orderCode()));
+                }).when(gateway).create(any());
+        String content = json.writeValueAsString(body);
+        var response = mvc.perform(post("/api/v1/orders").cookie(customer).with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content(content))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.paymentError").isNotEmpty()).andReturn();
+        int id = json.readTree(response.getResponse().getContentAsByteArray()).get("id").asInt();
+        mvc.perform(post("/api/v1/orders/" + id + "/payment").cookie(customer).with(csrf()))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.qrCode").value("000201TEST"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM orders WHERE idempotency_key = ?", Integer.class, body.idempotencyKey())).isEqualTo(1);
+    }
     @Test void checkoutUsesAccountContactAndRejectsAnotherUsersAddressOrIncompleteProfile() throws Exception {
         cart.add(OWNER, 11, 1);
         User other = users.saveAndFlush(User.create("delivery-other", "delivery-other@example.invalid", "hash", "Other", false, null));
@@ -136,10 +184,15 @@ class PaymentIT {
         int id = qr(); long code = code(id);
         String body = webhook(code, 10025000, "VND", "link" + code, "bank-ref-1", "00");
         for (int i = 0; i < 2; i++) mvc.perform(post("/api/v1/payments/payos/webhook").cookie(new Cookie("accessToken", "expired"))
+                .header("X-Request-Id", "webhook-request").header("Authorization", "Bearer private-test-value")
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
         assertThat(orders.get(OWNER, id).paymentStatus()).isEqualTo("paid");
         assertThat(orders.get(OWNER, id).status()).isEqualTo("confirmed");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_events", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs WHERE raw_body = ?::jsonb", Integer.class, body)).isEqualTo(2);
+        String headers = jdbc.queryForObject("SELECT request_header FROM transaction_logs ORDER BY id LIMIT 1", String.class);
+        assertThat(headers).contains("webhook-request").doesNotContain("private-test-value", "expired");
+        assertThat(jdbc.queryForList("SELECT status FROM transaction_logs ORDER BY id", String.class)).containsExactly("paid", "duplicate");
         assertThat(jdbc.queryForObject("SELECT payment_amount FROM orders WHERE id = ?", Long.class, id)).isEqualTo(10025000);
         payments.webhook(webhook(code, 10025000, "VND", "link" + code, "failed-ref", "01"));
         assertThat(orders.get(OWNER, id).paymentStatus()).isEqualTo("paid");
@@ -175,20 +228,20 @@ class PaymentIT {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             PaymentGateway.Request value = call.getArgument(0); requests.add(value.orderCode());
             if (requests.size() == 1) throw new ApiException(HttpStatus.BAD_GATEWAY, "Simulated timeout");
-            return new PaymentGateway.Link(value.orderCode(), value.amount(), "VND", "retry-link", "https://pay.payos.vn/web/retry-link");
+            return new PaymentGateway.Link(value.orderCode(), value.amount(), "VND", "retry-link", "https://pay.payos.vn/web/retry-link", "000201TEST", "970422", "113366668888", "NUTEE TEST", transferContent(value.orderCode()));
         }).when(gateway).create(any());
         assertThatThrownBy(() -> payments.create(OWNER, id)).isInstanceOf(ApiException.class);
         assertThat(payments.create(OWNER, id).status()).isEqualTo("pending");
         assertThat(payments.create(OWNER, id).checkoutUrl()).endsWith("retry-link");
         assertThat(requests).hasSize(2); assertThat(requests.get(0)).isEqualTo(requests.get(1));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs", Integer.class)).isZero();
     }
 
     @Test void callbackCanArriveBeforeCreateResponseWithoutDowngradingPaidStatus() {
         cart.add(OWNER, 11, 1); int id = orders.create(OWNER, request("qr", 10025000)).id();
         var prepared = transactions.prepare(OWNER, id);
-        transactions.webhook(new PaymentGateway.Event(prepared.code(), 10025000, "VND", "early-link", "early-ref", "00"));
-        var linked = transactions.linked(id, prepared.lease(), new PaymentGateway.Link(prepared.code(), 10025000, "VND", "early-link", "https://pay.payos.vn/web/early-link"));
+        transactions.webhook(new PaymentGateway.Event(prepared.code(), 10025000, "VND", "early-link", "early-ref", "00"), Map.of("data", Map.of("paymentLinkId", "early-link")), "{}");
+        var linked = transactions.linked(id, prepared.attempt(), new PaymentGateway.Link(prepared.code(), 10025000, "VND", "early-link", "https://pay.payos.vn/web/early-link", "000201TEST", "970422", "113366668888", "NUTEE TEST", transferContent(prepared.code())));
         assertThat(linked.status()).isEqualTo("paid");
         assertThat(orders.get(OWNER, id).paymentStatus()).isEqualTo("paid");
     }
@@ -247,7 +300,7 @@ class PaymentIT {
             var callbacks = List.of(pool.submit(() -> payments.webhook(body)), pool.submit(() -> payments.webhook(body)));
             for (var callback : callbacks) callback.get(20, TimeUnit.SECONDS);
             assertThat(orders.get(owner, winner.id()).paymentStatus()).isEqualTo("paid");
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_events", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs", Integer.class)).isEqualTo(2);
         }
     }
 
@@ -290,14 +343,14 @@ class PaymentIT {
         assertThat(stock()).isEqualTo(1);
     }
 
-    @Test void concurrentPaymentCreationUsesOneProviderRequestWhileLeaseIsActive() throws Exception {
+    @Test void concurrentPaymentCreationUsesOneProviderRequestWhileCreating() throws Exception {
         cart.add(OWNER, 11, 1); int id = orders.create(OWNER, request("qr", 10025000)).id();
         var entered = new CountDownLatch(1); var finish = new CountDownLatch(1);
         doAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             PaymentGateway.Request request = call.getArgument(0); entered.countDown();
             assertThat(finish.await(10, TimeUnit.SECONDS)).isTrue();
-            return new PaymentGateway.Link(request.orderCode(), request.amount(), "VND", "lease-link", "https://pay.payos.vn/web/lease-link");
+            return new PaymentGateway.Link(request.orderCode(), request.amount(), "VND", "concurrent-link", "https://pay.payos.vn/web/concurrent-link", "000201TEST", "970422", "113366668888", "NUTEE TEST", transferContent(request.orderCode()));
         }).when(gateway).create(any());
         try (var pool = Executors.newSingleThreadExecutor()) {
             var first = pool.submit(() -> payments.create(OWNER, id));
@@ -310,9 +363,25 @@ class PaymentIT {
         }
     }
 
+    @Test void staleCreateResponseAndFailureCannotOverwriteANewerAttempt() {
+        cart.add(OWNER, 11, 1);
+        int id = orders.create(OWNER, request("qr", 10025000)).id();
+        var first = transactions.prepare(OWNER, id);
+        jdbc.update("UPDATE orders SET updated_at = now() - interval '31 seconds' WHERE id = ?", id);
+        var second = transactions.prepare(OWNER, id);
+        assertThat(second.attempt()).isGreaterThan(first.attempt());
+        transactions.failed(id, first.attempt());
+        var link = new PaymentGateway.Link(first.code(), 10025000, "VND", "latest-link", "https://pay.payos.vn/web/latest-link",
+                "000201TEST", "970422", "113366668888", "NUTEE TEST", transferContent(first.code()));
+        assertThat(transactions.linked(id, first.attempt(), link).checkoutUrl()).isNull();
+        assertThat(payments.get(OWNER, id).status()).isEqualTo("creating");
+        assertThat(transactions.linked(id, second.attempt(), link).status()).isEqualTo("pending");
+    }
+
+    private String transferContent(long code) { return jdbc.queryForObject("SELECT order_code FROM orders WHERE gateway_order_code = ?", String.class, code); }
     private int qr() { cart.add(OWNER, 11, 1); int id = orders.create(OWNER, request("qr", 10025000)).id(); payments.create(OWNER, id); return id; }
     private int stock() { return jdbc.queryForObject("SELECT quantity FROM product_variants WHERE id = 11", Integer.class); }
-    private long code(int id) { return jdbc.queryForObject("SELECT gateway_order_code FROM transaction_logs WHERE order_id = ?", Long.class, id); }
+    private long code(int id) { return jdbc.queryForObject("SELECT gateway_order_code FROM orders WHERE id = ?", Long.class, id); }
     private CreateOrderRequest request(String method, long total) { return request(OWNER, method, total); }
     private CreateOrderRequest request(UUID owner, String method, long total) { return new CreateOrderRequest(UUID.randomUUID(), List.of(11), "", total, addressId(owner), "", method); }
     private int addressId(UUID owner) { return jdbc.queryForObject("SELECT id FROM user_addresses WHERE user_id = ? ORDER BY id LIMIT 1", Integer.class, owner); }

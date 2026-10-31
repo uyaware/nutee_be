@@ -51,12 +51,14 @@ loading sample data.
 
 The fresh baseline consists of three Flyway migrations: `V1__init_schema.sql`,
 `V2__add_constraints.sql`, and `V3__create_indexes.sql`. It includes the current
-checkout, discount and payOS schema: payment sessions use `transaction_logs`,
-callbacks use `payment_events`, and orders reference addresses without duplicate
+checkout, discount and payOS schema. V4 upgrades existing data in place: payment
+state, QR and bank details live in `orders`; each webhook delivery is recorded in
+`transaction_logs`, and `payment_events` is removed. Orders reference addresses without duplicate
 contact columns or `inventory_released`.
 This baseline requires an empty database. Existing deployments of the old V1–V7
 chain require an explicit reset or a separately reviewed data migration; do not
-repair or bypass Flyway validation. Catalog data is never seeded automatically.
+repair or bypass Flyway validation. The local profile automatically seeds the
+sample catalog after Flyway completes; set CATALOG_SEED_ENABLED=false to disable it.
 
 If the database was dropped, create it explicitly with the existing Compose volume,
 then start the API to apply the new migrations:
@@ -69,10 +71,13 @@ docker compose exec -T postgres psql -U nutee -d postgres -v ON_ERROR_STOP=1 -c 
 `init-local.ps1` reuses an existing volume; it does not recreate a manually dropped
 database inside that volume.
 
-To load the new optional development catalog after startup, run
-`.\scripts\seed-catalog.ps1` in another terminal. It adds 100 sample products and
-300 variants following the current ERD. Re-running preserves existing sample
-prices and quantities. See [Catalog API](docs/catalog-api.md) for the seed scope.
+When running with the `local` profile, the Java startup runner applies the catalog
+seed automatically after Flyway. It creates 100 sample products, plus one 2,000 VND
+payment test product with 100 units;
+subsequent starts preserve existing sample prices and quantities. Set
+`CATALOG_SEED_ENABLED=false` in `.env` and restart to turn it off. Other profiles
+do not run this seed. Promotions and vouchers remain a separate opt-in seed.
+See [Catalog API](docs/catalog-api.md) for details and limitations.
 
 | URL | Purpose |
 | --- | --- |

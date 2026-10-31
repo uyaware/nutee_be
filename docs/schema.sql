@@ -6,3 +6,4 @@
 \ir ../src/main/resources/db/migration/V1__init_schema.sql
 \ir ../src/main/resources/db/migration/V2__add_constraints.sql
 \ir ../src/main/resources/db/migration/V3__create_indexes.sql
+\ir ../src/main/resources/db/migration/V4__move_payment_details_to_orders.sql
