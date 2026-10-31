@@ -137,6 +137,9 @@ public class CartService {
         var product = variant.getProduct();
         var image = variant.getImage();
         Integer price = variant.getPrice();
+        Integer originalPrice = price;
+        var promotion = product.getPromotion();
+        if (price != null && price >= 0 && promotion != null) price = promotion.price(price, java.time.Instant.now());
         int stock = variant.getQuantity() == null ? 0 : Math.max(0, variant.getQuantity());
         String imageUrl = image == null ? fallbackImages.getOrDefault(product.getId(), "") : image.getImageUrl();
         CartItemStatus status;
@@ -152,6 +155,7 @@ public class CartService {
         Long lineTotal = price == null ? null : (long) price * item.getQuantity();
         return new CartItemResponse(variant.getId(), product.getId(), variant.getSku(), product.getName(), imageUrl,
                 price, item.getQuantity(), stock, status, lineTotal,
-                groupedSpecifications.getOrDefault(variant.getId(), List.of()));
+                groupedSpecifications.getOrDefault(variant.getId(), List.of()), originalPrice,
+                promotion != null && price != null && price < originalPrice ? promotion.getCode() : null);
     }
 }

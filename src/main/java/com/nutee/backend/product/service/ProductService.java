@@ -146,11 +146,15 @@ public class ProductService {
             }
         }
         Map<Integer, List<ProductVariantResponse>> result = new HashMap<>();
+        var now = java.time.Instant.now();
         for (var variant : rows) {
+            var promotion = variant.getProduct().getPromotion();
+            int price = promotion == null ? variant.getPrice() : promotion.price(variant.getPrice(), now);
             result.computeIfAbsent(variant.getProduct().getId(), key -> new ArrayList<>()).add(new ProductVariantResponse(
-                    variant.getId(), variant.getSku(), variant.getPrice(), variant.getQuantity(),
+                    variant.getId(), variant.getSku(), price, variant.getQuantity(),
                     variant.getImage() == null ? null : variant.getImage().getId(),
-                    groupedSpecifications.getOrDefault(variant.getId(), List.of())));
+                    groupedSpecifications.getOrDefault(variant.getId(), List.of()), variant.getPrice(),
+                    price < variant.getPrice() ? promotion.getCode() : null));
         }
         return result;
     }

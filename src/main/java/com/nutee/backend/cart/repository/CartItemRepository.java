@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 /** Truy cập giỏ luôn kèm ID tài khoản, không tra dòng giỏ chỉ theo ID từ client. */
 public interface CartItemRepository extends JpaRepository<CartItem, Integer> {
-    @EntityGraph(attributePaths = {"variant", "variant.product", "variant.image"})
+    @EntityGraph(attributePaths = {"variant", "variant.product", "variant.product.promotion", "variant.image"})
     List<CartItem> findByUser_IdOrderByIdAsc(UUID userId);
 
     Optional<CartItem> findByUser_IdAndVariant_Id(UUID userId, int variantId);

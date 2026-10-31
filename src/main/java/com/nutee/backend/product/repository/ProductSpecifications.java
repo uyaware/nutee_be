@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.data.jpa.domain.Specification;
+import org.hibernate.query.criteria.JpaExpression;
 
 /** Bộ lọc JPA cho sản phẩm, dùng subquery để phân trang không bị nhân bản bởi các quan hệ. */
 public final class ProductSpecifications {
@@ -141,7 +142,23 @@ public final class ProductSpecifications {
         var all = query.subquery(Integer.class);
         var variant = all.from(ProductVariant.class);
         all.select(cb.min(variant.<Integer>get("price"))).where(validVariant(variant, root, cb));
-        return cb.<Integer>coalesce().value(available).value(all);
+        Expression<Integer> original = cb.<Integer>coalesce().value(available).value(all);
+        var promotion = root.join("promotion", JoinType.LEFT);
+        var now = java.time.Instant.now();
+        var eligible = cb.and(cb.isTrue(promotion.get("active")), cb.equal(promotion.get("scope"), "product"),
+                cb.lessThanOrEqualTo(promotion.get("startsAt"), now), cb.greaterThan(promotion.get("endsAt"), now),
+                cb.ge(promotion.get("value"), 1), cb.or(cb.equal(promotion.get("type"), "fixed"),
+                        cb.and(cb.equal(promotion.get("type"), "percent"), cb.le(promotion.get("value"), 100))));
+        // Promotion is monotonic for all variants of a product, so discounting the minimum preserves ordering.
+        // Hibernate 6.6 Expression.as only changes the Java type; cast is needed before SQL multiplication.
+        Expression<Long> base = ((JpaExpression<Integer>) original).cast(Long.class);
+        Expression<Long> value = ((JpaExpression<Integer>) promotion.<Integer>get("value")).cast(Long.class);
+        Expression<Long> percent = cb.quot(cb.prod(base, value), 100L).as(Long.class);
+        Expression<Long> discount = cb.<Long>selectCase().when(cb.equal(promotion.get("type"), "percent"), percent)
+                .otherwise(value);
+        Expression<Long> reduced = cb.diff(base, discount);
+        return cb.<Long>selectCase().when(eligible, cb.<Long>selectCase().when(cb.lt(reduced, 0L), 0L).otherwise(reduced))
+                .otherwise(base).as(Integer.class);
     }
 
     /** Điều kiện biến thể có giá và số lượng được biết, không âm, thuộc đúng sản phẩm. */

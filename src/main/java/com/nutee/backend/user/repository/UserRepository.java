@@ -6,9 +6,10 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /** Truy cập tài khoản và khóa dòng khi thay đổi phiên hoặc tiêu thụ mã khôi phục. */
-public interface UserRepository extends JpaRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
     /** Tìm và khóa tài khoản theo hash để mã khôi phục chỉ được dùng một lần. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findByPasswordResetHash(String hash);

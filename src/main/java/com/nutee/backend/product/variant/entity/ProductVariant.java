@@ -45,4 +45,11 @@ public class ProductVariant {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /** Trừ kho đã khóa khi chốt đơn, không cho âm tồn kho. */
+    public void reserve(int amount) {
+        if (quantity == null || amount < 1 || quantity < amount) throw new com.nutee.backend.common.exception.ApiException(org.springframework.http.HttpStatus.CONFLICT, "Tồn kho đã thay đổi.");
+        quantity -= amount;
+    }
+    public void release(int amount) { quantity = Math.addExact(quantity, amount); }
 }

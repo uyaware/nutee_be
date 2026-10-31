@@ -2,6 +2,7 @@ package com.nutee.backend.product.entity;
 
 import com.nutee.backend.brand.entity.Brand;
 import com.nutee.backend.category.entity.Category;
+import com.nutee.backend.promotion.entity.Promotion;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -44,6 +45,11 @@ public class Product {
     private Boolean published;
     @Column(name = "default_variant_id")
     private Integer defaultVariantId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "promotion_id")
+    private Promotion promotion;
+
+    public void assignPromotion(Promotion rule) { promotion = rule; }
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "brand_id")
     private Brand brand;
