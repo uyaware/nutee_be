@@ -12,6 +12,8 @@ spring:
       ddl-auto: validate
 
 app:
+  payment:
+    reconcile-delay: 3600000
   docs-enabled: false
   security:
     cookies:

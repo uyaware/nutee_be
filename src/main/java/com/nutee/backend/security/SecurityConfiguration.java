@@ -38,7 +38,8 @@ public class SecurityConfiguration {
             @Value("${app.docs-enabled:false}") boolean docsEnabled)
             throws Exception {
         http
-                .csrf(csrf -> csrf.csrfTokenRepository(csrfTokens))
+                .csrf(csrf -> csrf.csrfTokenRepository(csrfTokens).ignoringRequestMatchers(request ->
+                        "POST".equals(request.getMethod()) && "/api/v1/payments/payos/webhook".equals(request.getRequestURI())))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(AbstractHttpConfigurer::disable)
@@ -49,6 +50,7 @@ public class SecurityConfiguration {
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors))
                 .authorizeHttpRequests(authorize -> {
+                    authorize.requestMatchers(HttpMethod.POST, "/api/v1/payments/payos/webhook").permitAll();
                     authorize.requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/**",
                             "/api/v1/categories", "/api/v1/categories/*", "/api/v1/brands", "/api/v1/brands/*").permitAll();
                     authorize.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
