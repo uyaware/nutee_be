@@ -109,7 +109,7 @@ SDK kiểm tra HMAC trên `data`; chỉ `data.code="00"` đã ký được xét 
 Backend đối chiếu mã payOS, paymentLinkId nếu đã biết, số tiền chính xác và VND.
 Outer `success`, query `status=paid` hay `payment=paid` không đổi trạng thái.
 
-- `payment_attempts`: một dòng/đơn; mã payOS từ sequence riêng, không đổi sau timeout.
+- `transaction_logs`: một phiên thanh toán/đơn; mã payOS từ sequence riêng, không đổi sau timeout.
   Lease 30 giây tránh tạo link song song. SDK timeout 10 giây, không tự retry mạng;
   create lỗi sẽ đọc lại đúng mã để khôi phục response đã mất.
 - `payment_events`: reference duy nhất; callback lặp cùng dữ liệu được ACK 200, không ghi
@@ -132,11 +132,10 @@ UI không thông báo hủy thành công nếu payOS vẫn đang chờ hoặc c�
 
 ## Migration và kiểm chứng
 
-V7 bỏ cột liên hệ/địa chỉ trùng và giữ nguyên V4/V6, xem
-[chi tiết migration](address-payment-migration-proposal.md). Các phần còn lại của V6
-phục vụ snapshot giá/món hàng, idempotency key, cờ hoàn kho, hai bảng giao dịch và
-sequence mã payOS; không chứa cấu hình payOS. Đơn cũ chỉ đọc, không tạo link/hủy
-qua luồng mới vì chưa có reservation/snapshot tương ứng.
+Baseline V1–V3 tạo snapshot giá/món hàng, idempotency key, `transaction_logs`,
+`payment_events` và sequence mã payOS. Bảng `orders` không có `inventory_released`;
+trạng thái `cancelled` được kiểm tra dưới khóa dòng để tránh hoàn kho hai lần.
+Schema này dành cho database rỗng; không tương thích trực tiếp với Flyway V1–V7 cũ.
 
 `PayOSAdapterTest` dùng vector chữ ký công khai chính thức và kiểm tra payload giả mạo.
 `PaymentIT` dùng PostgreSQL thật, SDK xác minh chữ ký thật; chỉ API mạng provider được mock.
@@ -144,3 +143,27 @@ Bao phủ snapshot, idempotency, stock/voucher race, webhook lặp/trùng refere
 tiền tệ/link, callback sớm, tiền đến muộn, lỗi provider, COD/hết hạn và đối soát mất webhook.
 Frontend E2E dùng HTTP fixture riêng cho kiểm tra retry cùng nội dung, phí 25k, hosted link
 và chống giả trạng thái bằng URL. Chưa thay thế kiểm chứng giao dịch thật trên kênh merchant.
+
+## Kiểm tra merchant thật theo lựa chọn
+
+Frontend đối soát một lần qua `POST /orders/{id}/payment/refresh` khi quay lại
+từ payOS với `orderCode` và `id`. Các tham số redirect chỉ kích hoạt kiểm tra;
+trạng thái thanh toán vẫn lấy từ backend. Lỗi đối soát được hiển thị để thử lại.
+
+`PayOSLiveIT` chỉ chạy khi `PAYOS_LIVE_TEST_ENABLED=true`, với ba khóa trong môi trường.
+Test tạo link 2.000đ, truy vấn số tiền/trạng thái, rồi hủy trong `finally` sau khi
+tạo thành công. Không chuyển tiền và không ghi database local. Test mặc định bỏ qua
+bài này để không tạo link bên ngoài trong mỗi lần build.
+
+Từ thư mục backend, dùng Java 21:
+
+```powershell
+. .\scripts\local-environment.ps1
+Import-NuteeLocalEnvironment -ProjectRoot (Get-Location).Path
+$env:PAYOS_LIVE_TEST_ENABLED = 'true'
+.\mvnw.cmd '-Dit.test=PayOSLiveIT' '-Dtest=PayOSAdapterTest' verify
+Remove-Item Env:PAYOS_LIVE_TEST_ENABLED
+```
+
+Xem [báo cáo kiểm chứng ngày 31/10/2026](REPORT-2026-10-31.md) để biết kết quả,
+phạm vi đã kiểm tra và đối chiếu database với draw.io.

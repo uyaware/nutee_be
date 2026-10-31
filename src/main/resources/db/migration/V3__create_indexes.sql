@@ -27,8 +27,12 @@ CREATE INDEX idx_user_vouchers_voucher_id ON user_vouchers (voucher_id);
 CREATE INDEX idx_aftersale_requests_order_item_id ON aftersale_requests (order_item_id);
 CREATE INDEX idx_aftersale_request_histories_request_id ON aftersale_request_histories (request_id);
 CREATE INDEX idx_aftersale_request_histories_user_id ON aftersale_request_histories (user_id);
-CREATE INDEX idx_transaction_logs_order_id ON transaction_logs (order_id);
+CREATE INDEX idx_transaction_logs_reconcile ON transaction_logs (updated_at, id)
+    WHERE status IN ('pending', 'error', 'creating', 'review');
 CREATE INDEX idx_review_histories_user_id ON review_histories (user_id);
 CREATE INDEX idx_review_histories_latest ON review_histories (review_id, created_at DESC, id DESC);
 CREATE INDEX idx_products_default_variant_id ON products (default_variant_id)
     WHERE default_variant_id IS NOT NULL;
+CREATE UNIQUE INDEX uk_orders_checkout_key ON orders (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX uk_vouchers_code_ci ON vouchers (upper(btrim(code)));
+CREATE UNIQUE INDEX uk_promotions_code_ci ON promotions (upper(btrim(code)));

@@ -13,9 +13,9 @@ import org.hibernate.generator.EventType;
 import com.nutee.backend.payment.port.PaymentGateway;
 
 /** Mỗi đơn dùng một mã payOS ổn định; lease bảo vệ các lần tạo link đồng thời/mất response. */
-@Entity @Table(name = "payment_attempts") @Getter @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Entity @Table(name = "transaction_logs") @Getter @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PaymentAttempt {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Integer id;
     @Column(name = "order_id", nullable = false, unique = true) private Integer orderId;
     @Generated(event = EventType.INSERT) @Column(name = "gateway_order_code", insertable = false, updatable = false) private Long gatewayOrderCode;
     private String provider = "payos";

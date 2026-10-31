@@ -1,0 +1,157 @@
+{
+    "source":  "https://drive.google.com/file/d/1hmp8WFtYhvkK1jkg758HYj5xaVGpoJLy/view",
+    "sourceModifiedTime":  "2026-10-31T06:56:42.596Z",
+    "page":  "ERD",
+    "domainTables":  24,
+    "domainColumns":  200,
+    "constraints":  87,
+    "foreignKeys":  30,
+    "indexes":  66,
+    "excludedInfrastructureTable":  "flyway_schema_history",
+    "tableSummary":  [
+                         {
+                             "table":  "users",
+                             "diagramColumns":  15,
+                             "databaseColumns":  15
+                         },
+                         {
+                             "table":  "user_addresses",
+                             "diagramColumns":  8,
+                             "databaseColumns":  8
+                         },
+                         {
+                             "table":  "auth_providers",
+                             "diagramColumns":  6,
+                             "databaseColumns":  6
+                         },
+                         {
+                             "table":  "products",
+                             "diagramColumns":  11,
+                             "databaseColumns":  11
+                         },
+                         {
+                             "table":  "product_images",
+                             "diagramColumns":  6,
+                             "databaseColumns":  6
+                         },
+                         {
+                             "table":  "variant_specifications",
+                             "diagramColumns":  6,
+                             "databaseColumns":  6
+                         },
+                         {
+                             "table":  "brands",
+                             "diagramColumns":  4,
+                             "databaseColumns":  4
+                         },
+                         {
+                             "table":  "categories",
+                             "diagramColumns":  5,
+                             "databaseColumns":  5
+                         },
+                         {
+                             "table":  "product_categories",
+                             "diagramColumns":  2,
+                             "databaseColumns":  2
+                         },
+                         {
+                             "table":  "cart_items",
+                             "diagramColumns":  7,
+                             "databaseColumns":  7
+                         },
+                         {
+                             "table":  "reviews",
+                             "diagramColumns":  2,
+                             "databaseColumns":  2
+                         },
+                         {
+                             "table":  "orders",
+                             "diagramColumns":  22,
+                             "databaseColumns":  22
+                         },
+                         {
+                             "table":  "order_histories",
+                             "diagramColumns":  5,
+                             "databaseColumns":  5
+                         },
+                         {
+                             "table":  "vouchers",
+                             "diagramColumns":  14,
+                             "databaseColumns":  14
+                         },
+                         {
+                             "table":  "user_vouchers",
+                             "diagramColumns":  2,
+                             "databaseColumns":  2
+                         },
+                         {
+                             "table":  "promotions",
+                             "diagramColumns":  10,
+                             "databaseColumns":  10
+                         },
+                         {
+                             "table":  "order_items",
+                             "diagramColumns":  13,
+                             "databaseColumns":  13
+                         },
+                         {
+                             "table":  "aftersale_requests",
+                             "diagramColumns":  8,
+                             "databaseColumns":  8
+                         },
+                         {
+                             "table":  "aftersale_request_histories",
+                             "diagramColumns":  5,
+                             "databaseColumns":  5
+                         },
+                         {
+                             "table":  "transaction_logs",
+                             "diagramColumns":  18,
+                             "databaseColumns":  18
+                         },
+                         {
+                             "table":  "product_variants",
+                             "diagramColumns":  8,
+                             "databaseColumns":  8
+                         },
+                         {
+                             "table":  "review_histories",
+                             "diagramColumns":  6,
+                             "databaseColumns":  6
+                         },
+                         {
+                             "table":  "event_logs",
+                             "diagramColumns":  9,
+                             "databaseColumns":  9
+                         },
+                         {
+                             "table":  "payment_events",
+                             "diagramColumns":  8,
+                             "databaseColumns":  8
+                         }
+                     ],
+    "differences":  [
+                        {
+                            "kind":  "constraint_definition",
+                            "table":  "products",
+                            "field":  "ck_products_avg_rating",
+                            "diagram":  "CHECK (avg_rating BETWEEN 0 AND 5)",
+                            "database":  "CHECK (((avg_rating \u003e= (0)::numeric) AND (avg_rating \u003c= (5)::numeric)))"
+                        },
+                        {
+                            "kind":  "index_definition",
+                            "table":  "transaction_logs",
+                            "field":  "idx_transaction_logs_reconcile",
+                            "diagram":  "CREATE INDEX idx_transaction_logs_reconcile ON transaction_logs (updated_at, id)\n    WHERE status IN (\u0027pending\u0027, \u0027error\u0027, \u0027creating\u0027, \u0027review\u0027)",
+                            "database":  "CREATE INDEX idx_transaction_logs_reconcile ON public.transaction_logs USING btree (updated_at, id) WHERE ((status)::text = ANY ((ARRAY[\u0027pending\u0027::character varying, \u0027error\u0027::character varying, \u0027creating\u0027::character varying, \u0027review\u0027::character varying])::text[]))"
+                        },
+                        {
+                            "kind":  "constraint_definition",
+                            "table":  "review_histories",
+                            "field":  "ck_review_histories_rating",
+                            "diagram":  "CHECK (rating BETWEEN 1 AND 5)",
+                            "database":  "CHECK (((rating \u003e= 1) AND (rating \u003c= 5)))"
+                        }
+                    ],
+    "note":  "SQL comparison normalizes PostgreSQL casts, btree, whitespace and parentheses. Column defaults are compared; sequence limits require separate review. This is not a SQL equivalence proof."
+}

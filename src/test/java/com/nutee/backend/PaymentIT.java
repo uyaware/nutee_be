@@ -181,7 +181,7 @@ class PaymentIT {
         assertThat(payments.create(OWNER, id).status()).isEqualTo("pending");
         assertThat(payments.create(OWNER, id).checkoutUrl()).endsWith("retry-link");
         assertThat(requests).hasSize(2); assertThat(requests.get(0)).isEqualTo(requests.get(1));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_attempts", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM transaction_logs", Integer.class)).isEqualTo(1);
     }
 
     @Test void callbackCanArriveBeforeCreateResponseWithoutDowngradingPaidStatus() {
@@ -312,7 +312,7 @@ class PaymentIT {
 
     private int qr() { cart.add(OWNER, 11, 1); int id = orders.create(OWNER, request("qr", 10025000)).id(); payments.create(OWNER, id); return id; }
     private int stock() { return jdbc.queryForObject("SELECT quantity FROM product_variants WHERE id = 11", Integer.class); }
-    private long code(int id) { return jdbc.queryForObject("SELECT gateway_order_code FROM payment_attempts WHERE order_id = ?", Long.class, id); }
+    private long code(int id) { return jdbc.queryForObject("SELECT gateway_order_code FROM transaction_logs WHERE order_id = ?", Long.class, id); }
     private CreateOrderRequest request(String method, long total) { return request(OWNER, method, total); }
     private CreateOrderRequest request(UUID owner, String method, long total) { return new CreateOrderRequest(UUID.randomUUID(), List.of(11), "", total, addressId(owner), "", method); }
     private int addressId(UUID owner) { return jdbc.queryForObject("SELECT id FROM user_addresses WHERE user_id = ? ORDER BY id LIMIT 1", Integer.class, owner); }

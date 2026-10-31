@@ -113,7 +113,7 @@ public class PaymentTransactions {
         release(order);
     }
     private void release(Order order) {
-        if (order.isInventoryReleased()) return;
+        if ("cancelled".equals(order.getStatus())) return;
         if ("paid".equals(order.getPaymentStatus())) throw conflict("Đơn đã được thanh toán.");
         var rows = items.reservations(order.getId());
         var locked = variants.findLockedByIdIn(rows.stream().map(OrderItemRepository.Reservation::getVariantId).toList(), Sort.by("id"));

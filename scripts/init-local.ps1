@@ -90,11 +90,18 @@ docker compose --project-directory $projectRoot --env-file $envFile up -d --wait
 if ($LASTEXITCODE -ne 0) {
     throw 'Database startup failed. Check Docker output and the configured host port.'
 }
-docker compose --project-directory $projectRoot --env-file $envFile exec -T postgres `
-    psql -U $env:POSTGRES_USER -d $env:POSTGRES_DB -v ON_ERROR_STOP=1 `
-    -c 'SELECT current_database(), current_user, version();'
-if ($LASTEXITCODE -ne 0) {
-    throw 'Database verification failed.'
+# A local socket can use trust authentication, so it cannot verify the application's password.
+$previousPgPassword = [Environment]::GetEnvironmentVariable('PGPASSWORD', 'Process')
+try {
+    $env:PGPASSWORD = $env:DB_PASSWORD
+    docker compose --project-directory $projectRoot --env-file $envFile exec -T -e PGPASSWORD postgres `
+        psql -h 127.0.0.1 -U $env:DB_USERNAME -d $env:POSTGRES_DB -w -v ON_ERROR_STOP=1 `
+        -c 'SELECT current_database(), current_user, version();'
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Database authentication failed. Restore the existing database password in .env. POSTGRES_PASSWORD only initializes an empty volume; changing it does not update existing credentials.'
+    }
+} finally {
+    [Environment]::SetEnvironmentVariable('PGPASSWORD', $previousPgPassword, 'Process')
 }
 Write-Host "Database is ready: localhost:$($env:POSTGRES_PORT)/$($env:POSTGRES_DB)"
 Write-Host 'Start .\scripts\run-local.ps1 to apply Flyway migrations and run the API.'

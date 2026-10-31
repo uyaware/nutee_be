@@ -1,6 +1,7 @@
 package com.nutee.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -16,6 +17,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -60,13 +62,13 @@ class NuteeApplicationIT {
                 .containsExactlyInAnyOrder("User", "AuthProvider", "Brand", "Category", "Product",
                         "ProductVariant", "ProductImage", "VariantSpecification", "OrderItem",
                         "ProductReview", "ProductReviewHistory", "CartItem", "UserAddress", "Promotion", "Voucher", "Order", "PaymentAttempt", "PaymentEvent");
-        assertThat(flyway.info().applied()).hasSize(7);
+        assertThat(flyway.info().applied()).hasSize(3);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
-        assertThat(tables).hasSize(26).contains("flyway_schema_history", "users", "auth_providers",
+        assertThat(tables).hasSize(25).contains("flyway_schema_history", "users", "auth_providers",
                 "orders", "order_items", "product_variants", "event_logs",
-                "variant_specifications")
-                .doesNotContain("refresh_sessions", "product_brands", "product_specifications", "variant_images");
+                "variant_specifications", "transaction_logs", "payment_events")
+                .doesNotContain("payment_attempts", "refresh_sessions", "product_brands", "product_specifications", "variant_images");
         assertThat(jdbc.queryForObject("SELECT data_type FROM information_schema.columns "
                 + "WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'refresh_token'",
                 String.class)).isEqualTo("text");
@@ -82,40 +84,18 @@ class NuteeApplicationIT {
     }
 
     @Test
-    void deliveryContactMigrationRemovesCopiesAndPreservesProfilesAddressesAndOrderReferences() {
-        String schema = "address_upgrade";
-        var baseline = Flyway.configure()
-                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .locations("classpath:db/migration").schemas(schema).defaultSchema(schema).target("3").load();
-        baseline.migrate();
-        jdbc.update("INSERT INTO address_upgrade.users (id, username, email, full_name, phone) "
-                + "VALUES ('10000000-0000-0000-0000-000000000001', 'upgrade', 'upgrade@example.invalid', 'Existing Name', '0912345678')");
-        jdbc.update("INSERT INTO address_upgrade.user_addresses (user_id, province_city, ward_commune, street, is_default) "
-                + "VALUES ('10000000-0000-0000-0000-000000000001', 'Existing City', 'Existing Ward', 'Existing Street', true)");
-        var throughV6 = Flyway.configure()
-                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .locations("classpath:db/migration").schemas(schema).defaultSchema(schema).target("6").load();
-        assertThat(throughV6.migrate().migrationsExecuted).isEqualTo(3);
-        var oldAddress = jdbc.queryForMap("SELECT id, recipient, phone FROM address_upgrade.user_addresses");
-        assertThat(oldAddress).containsEntry("recipient", "Existing Name").containsEntry("phone", "0912345678");
-        jdbc.update("INSERT INTO address_upgrade.orders (order_code, user_id, user_address_id, recipient, phone, address_line) "
-                + "VALUES ('UPGRADE001', '10000000-0000-0000-0000-000000000001', ?, 'Old Recipient', '0900000000', 'Old Address')", oldAddress.get("id"));
-
-        var upgrade = Flyway.configure()
-                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .locations("classpath:db/migration").schemas(schema).defaultSchema(schema).load();
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
-        var address = jdbc.queryForMap("SELECT id, street, is_default FROM address_upgrade.user_addresses");
-        assertThat(address).containsEntry("id", oldAddress.get("id"))
-                .containsEntry("street", "Existing Street").containsEntry("is_default", true);
-        assertThat(jdbc.queryForMap("SELECT full_name, phone FROM address_upgrade.users"))
-                .containsEntry("full_name", "Existing Name").containsEntry("phone", "0912345678");
-        assertThat(jdbc.queryForObject("SELECT user_address_id FROM address_upgrade.orders WHERE order_code = 'UPGRADE001'", Integer.class))
-                .isEqualTo(oldAddress.get("id"));
-        assertThat(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema = 'address_upgrade' "
-                + "AND table_name IN ('user_addresses', 'orders') AND column_name IN ('recipient', 'phone', 'address_line')", String.class)).isEmpty();
-        upgrade.validate();
-        assertThat(upgrade.migrate().migrationsExecuted).isZero();
+    @Transactional
+    void paymentUsesTransactionLogsAndDoesNotDuplicateDeliveryOrInventoryFields() {
+        assertThat(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' "
+                + "AND table_name IN ('user_addresses', 'orders') AND column_name IN ('recipient', 'phone', 'address_line', 'inventory_released')", String.class)).isEmpty();
+        jdbc.update("INSERT INTO users (id, username, email) VALUES ('10000000-0000-0000-0000-000000000001', 'baseline', 'baseline@example.invalid')");
+        jdbc.update("INSERT INTO orders (order_code, user_id) VALUES ('BASELINE01', '10000000-0000-0000-0000-000000000001')");
+        Integer id = jdbc.queryForObject("SELECT id FROM orders WHERE order_code = 'BASELINE01'", Integer.class);
+        jdbc.update("INSERT INTO transaction_logs (order_id, amount, expires_at) VALUES (?, 1000, now() + interval '1 hour')", id);
+        assertThat(jdbc.queryForObject("SELECT gateway_order_code FROM transaction_logs WHERE order_id = ?", Long.class, id))
+                .isGreaterThanOrEqualTo(1000000L);
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO transaction_logs (order_id, amount, expires_at) VALUES (?, 1000, now() + interval '1 hour')", id))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

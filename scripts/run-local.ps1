@@ -25,6 +25,21 @@ $env:JAVA_HOME = $selectedJdk
 $env:Path = "$selectedJdk\bin;$env:Path"
 $env:SPRING_PROFILES_ACTIVE = 'local'
 
+# Report the owner of a busy port before Maven starts; never stop another process automatically.
+$serverPort = 8080
+if (-not [string]::IsNullOrWhiteSpace($env:SERVER_PORT)) {
+    if (-not [int]::TryParse($env:SERVER_PORT, [ref]$serverPort) -or $serverPort -lt 1 -or $serverPort -gt 65535) {
+        throw 'Invalid SERVER_PORT in .env. Use a port between 1 and 65535.'
+    }
+}
+$listeners = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+if (@($listeners | Where-Object { $_.Port -eq $serverPort }).Count -gt 0) {
+    $portOwners = @(Get-NetTCPConnection -State Listen -LocalPort $serverPort -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+    $ownerHint = if ($portOwners.Count -gt 0) { " PID: $($portOwners -join ', ')." } else { '' }
+    throw "Port $serverPort is already in use.$ownerHint Stop the existing service, then retry. To identify it, run: netstat -ano | findstr :$serverPort"
+}
+
 Push-Location $projectRoot
 try {
     Write-Host 'Starting NUTEE. Press Ctrl+C to stop.'

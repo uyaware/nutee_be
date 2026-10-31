@@ -1,4 +1,4 @@
--- Initial schema from the ERD page i9jcEZAXrc9SuSMo_mB8, updated 2026-10-30.
+-- Fresh baseline for NUTEE; initialize only an empty database.
 -- Table/column definitions and defaults only. Constraints are in V2; indexes in V3.
 -- SERIAL supplies its PostgreSQL sequence/default and implicit column nullability.
 
@@ -123,7 +123,13 @@ CREATE TABLE orders (
     payment_amount NUMERIC(18, 2),
     payment_status VARCHAR(255),
     payment_description TEXT,
-    payment_expired_at TIMESTAMPTZ
+    payment_expired_at TIMESTAMPTZ,
+    idempotency_key UUID,
+    request_hash VARCHAR(64),
+    promotion_discount BIGINT NOT NULL DEFAULT 0,
+    voucher_discount BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE order_histories (
@@ -145,6 +151,8 @@ CREATE TABLE vouchers (
     end_date TIMESTAMPTZ,
     quantity INT,
     max_uses_per_user INT,
+    min_order BIGINT NOT NULL DEFAULT 0,
+    max_discount BIGINT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -174,6 +182,11 @@ CREATE TABLE order_items (
     quantity INT DEFAULT 1,
     calculated_price NUMERIC(18, 2),
     warranty_expired_at TIMESTAMPTZ,
+    product_name VARCHAR(255),
+    sku_snapshot VARCHAR(16),
+    image_url TEXT,
+    configuration TEXT,
+    original_price BIGINT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -197,16 +210,38 @@ CREATE TABLE aftersale_request_histories (
     occurred_at TIMESTAMPTZ
 );
 
+CREATE SEQUENCE payment_gateway_order_code START WITH 1000000 MAXVALUE 9999999999 NO CYCLE;
+
 CREATE TABLE transaction_logs (
     id SERIAL,
     order_id INT,
-    status VARCHAR(255),
+    gateway_order_code BIGINT DEFAULT nextval('payment_gateway_order_code'),
+    provider VARCHAR(20) DEFAULT 'payos',
+    amount BIGINT,
+    currency VARCHAR(3) DEFAULT 'VND',
+    status VARCHAR(255) DEFAULT 'new',
+    external_id VARCHAR(100),
+    checkout_url TEXT,
+    lease_token UUID,
+    lease_until TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
     raw_body JSONB,
     request_header TEXT,
     error TEXT,
     attempt_count INT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE payment_events (
+    id VARCHAR(240),
+    gateway_order_code BIGINT,
+    external_id VARCHAR(100),
+    amount BIGINT,
+    currency VARCHAR(3),
+    result_code VARCHAR(20),
+    decision VARCHAR(40),
+    received_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE product_variants (

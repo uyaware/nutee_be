@@ -62,8 +62,8 @@ không bị xóa; FK giữ dữ liệu và API trả 409.
 
 Địa chỉ không lưu tên/số điện thoại. Đặt hàng dùng `users.full_name`, `users.phone`
 và lưu `addressId` vào cột có sẵn `orders.user_address_id`. Hồ sơ thiếu tên hoặc số
-điện thoại hợp lệ phải được cập nhật trước khi đặt hàng. Migration V7 xóa các cột
-liên hệ trùng, giữ nguyên V4/V6: xem [chi tiết migration](address-payment-migration-proposal.md).
+điện thoại hợp lệ phải được cập nhật trước khi đặt hàng. Baseline V1–V3 không tạo
+các cột liên hệ trùng: xem [chi tiết schema](address-payment-migration-proposal.md).
 
 Frontend: Hồ sơ ở `/account/profile`, địa chỉ ở `/account/addresses`, Google ở
 `/account/security`. Checkout đọc địa chỉ đã lưu, chọn mặc định trước và gửi `addressId`.
@@ -71,5 +71,5 @@ Tên/số điện thoại hiển thị từ hồ sơ; muốn thay đổi thì s�
 
 `ProfileIT` kiểm tra quyền sở hữu, CSRF, validation, chuẩn hóa số, cập nhật nguyên tử,
 địa chỉ mặc định, request đồng thời và địa chỉ đang được đơn tham chiếu với PostgreSQL.
-`NuteeApplicationIT` kiểm tra nâng cấp từ V3 qua V6 lên V7: xóa các cột trùng,
-giữ hồ sơ user, địa chỉ và khóa địa chỉ trên đơn; chạy lại không áp dụng migration lần hai.
+`NuteeApplicationIT` kiểm tra baseline V1–V3, các cột liên hệ trùng không tồn tại,
+và ràng buộc phiên thanh toán trong PostgreSQL.

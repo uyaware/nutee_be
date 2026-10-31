@@ -16,45 +16,47 @@ Cart endpoints and concurrency rules: [docs/cart-api.md](docs/cart-api.md).
 Profile/address endpoints and ownership rules: [docs/account-api.md](docs/account-api.md).
 Promotion/voucher rules and seed data: [docs/discounts-api.md](docs/discounts-api.md).
 Order/payment API, adapter and merchant setup: [docs/payments-api.md](docs/payments-api.md).
+Windows PostgreSQL and pgAdmin setup: [docs/postgresql-pgadmin.md](docs/postgresql-pgadmin.md).
 
 ## Run locally on Windows
 
-Start Docker Desktop with its Linux-container engine, then run from this directory:
+With PostgreSQL installed on Windows, start the PostgreSQL service and set these
+values in the existing ignored `.env` using your own database and credentials:
+
+```dotenv
+DB_URL=jdbc:postgresql://localhost:5432/nutee
+DB_USERNAME=postgres
+DB_PASSWORD=your_postgresql_password
+SERVER_PORT=8080
+```
+
+Keep the existing JWT, Google, and payOS values in `.env`. From this backend
+directory run:
 
 ```powershell
-.\scripts\init-local.ps1
 .\scripts\run-local.ps1
 ```
 
-The initializer creates/reuses `.env`, generates separate random HMAC secrets,
-preserves existing database credentials, and starts PostgreSQL. Default DB settings:
+The runner imports `.env`, selects JDK 21, checks whether the API port is busy,
+and starts Spring Boot with the local profile. It does not start or require Docker.
+Use `-JdkHome 'C:\path\to\jdk-21'` if the JDK is installed elsewhere. Ctrl+C
+stops the backend. If port 8080 is occupied, use
+`netstat -ano | findstr :8080` to identify the owning PID, then stop the relevant
+application before retrying. The frontend Vite proxy currently targets port 8080.
 
-| Setting | Value |
-| --- | --- |
-| Host / port | localhost:5433 |
-| Database / user | nutee / nutee |
-| Password | DB_PASSWORD in ignored `.env` |
+Alternatively, `.\scripts\init-local.ps1` starts the optional Docker PostgreSQL
+setup; it is not needed for PostgreSQL installed on Windows. Existing seed runner
+scripts use Docker; see [catalog seed instructions](docs/catalog-api.md) before
+loading sample data.
 
-The runner imports `.env`, finds JDK 21, and starts the local profile. If necessary:
-`.\scripts\run-local.ps1 -JdkHome 'C:\path\to\jdk-21'`.
-The default JDK 17 installed on this machine is not used by the runner. Ctrl+C stops
-the API. `docker compose down` stops PostgreSQL and preserves the data volume.
-Never overwrite `.env` with the template after initialization: that would replace
-configuration needed by the existing database. Changing POSTGRES_PASSWORD does not
-change an already initialized PostgreSQL role's password.
-
-The application applies seven Flyway migrations before JPA validates its mappings:
-`V1__init_schema.sql`, `V2__add_constraints.sql`, `V3__create_indexes.sql`,
-`V4__address_contacts.sql`, `V5__discount_rules.sql`, `V6__orders_and_payments.sql`,
-and `V7__remove_duplicate_delivery_contacts.sql`.
-V4 adds per-address recipient/phone; V5 adds voucher minimum/cap limits and unique codes;
-V6 adds order snapshots, idempotency and payment audit. V7 removes the obsolete recipient/phone
-copies from addresses and recipient/phone/address_line copies from orders. User profiles,
-address rows and order-address references are retained; contact details come from users.
-This fresh baseline follows the updated ERD. The old local database and catalog
-seed were explicitly removed; create an empty database before restarting the API.
-Catalog data is never seeded automatically. Existing deployments of the previous migration chain
-need a deliberate reset or a separate data migration; do not bypass validation.
+The fresh baseline consists of three Flyway migrations: `V1__init_schema.sql`,
+`V2__add_constraints.sql`, and `V3__create_indexes.sql`. It includes the current
+checkout, discount and payOS schema: payment sessions use `transaction_logs`,
+callbacks use `payment_events`, and orders reference addresses without duplicate
+contact columns or `inventory_released`.
+This baseline requires an empty database. Existing deployments of the old V1–V7
+chain require an explicit reset or a separately reviewed data migration; do not
+repair or bypass Flyway validation. Catalog data is never seeded automatically.
 
 If the database was dropped, create it explicitly with the existing Compose volume,
 then start the API to apply the new migrations:

@@ -1,0 +1,164 @@
+{
+    "date":  "2026-10-31",
+    "backend":  {
+                    "tests":  110,
+                    "failures":  0,
+                    "errors":  0,
+                    "skipped":  0
+                },
+    "backendSuites":  [
+                          {
+                              "name":  "com.nutee.backend.auth.service.AuthServiceTest",
+                              "tests":  5,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.auth.service.GoogleTokenVerifierTest",
+                              "tests":  3,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.auth.service.PasswordResetServiceTest",
+                              "tests":  6,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.InfrastructureWebTest",
+                              "tests":  8,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.JwtAuthWebTest",
+                              "tests":  6,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.JwtSecurityWebTest",
+                              "tests":  2,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.PasswordResetWebTest",
+                              "tests":  2,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.PayOSAdapterTest",
+                              "tests":  3,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.security.JwtConfigurationTest",
+                              "tests":  4,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.AuthFlowIT",
+                              "tests":  17,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.CartIT",
+                              "tests":  6,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.CatalogIT",
+                              "tests":  11,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.DiscountIT",
+                              "tests":  8,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.NuteeApplicationIT",
+                              "tests":  7,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.PaymentIT",
+                              "tests":  15,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.PayOSLiveIT",
+                              "tests":  1,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          },
+                          {
+                              "name":  "com.nutee.backend.ProfileIT",
+                              "tests":  6,
+                              "failures":  0,
+                              "errors":  0,
+                              "skipped":  0
+                          }
+                      ],
+    "frontend":  {
+                     "typecheck":  "passed",
+                     "lint":  "passed",
+                     "unitTests":  43,
+                     "browserTests":  25,
+                     "productionBuild":  "passed"
+                 },
+    "liveStack":  {
+                      "passed":  true,
+                      "httpMocks":  false,
+                      "checks":  [
+                                     "catalog-through-vite-proxy",
+                                     "csrf-and-invalid-login",
+                                     "checkout-auth-guard"
+                                 ],
+                      "pageErrors":  0
+                  },
+    "payos":  {
+                  "liveCreateRetrieveCancel":  "passed",
+                  "amountVnd":  2000,
+                  "moneyTransferred":  0,
+                  "localDatabaseWrites":  0,
+                  "bankTransferSuccessVerified":  false
+              },
+    "database":  {
+                     "schemaChanged":  false,
+                     "domainTables":  24,
+                     "domainColumns":  200,
+                     "foreignKeys":  30,
+                     "constraints":  87,
+                     "indexes":  66,
+                     "representationDifferences":  3,
+                     "missingOrExtraDomainTablesOrColumns":  0
+                 }
+}

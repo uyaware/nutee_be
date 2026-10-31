@@ -1,18 +1,15 @@
 # Schema decisions
 
 Source: [NUTEE_EERD_ERD.drawio](https://drive.google.com/file/d/1hmp8WFtYhvkK1jkg758HYj5xaVGpoJLy/view),
-ERD page `i9jcEZAXrc9SuSMo_mB8`, modified 2026-10-30T12:27:02.048Z.
-The ERD page, rather than the conceptual EERD page, defines this baseline.
+ERD page `i9jcEZAXrc9SuSMo_mB8`. The physical ERD is synchronized to the
+current V1–V3 baseline; the conceptual EERD page remains separate.
 
 ## Authorized reset
 
-The user explicitly requested replacement of all migrations and deletion of the
-local database and catalog seed data. The old V1/V2/V3 migration chain has been
-removed. This baseline is for a new, empty database; it is not an upgrade path
-for any database that applied the previous migration chain. The configured local
-`nutee` database on `localhost:5433` was dropped, including its Flyway history.
-The catalog seed SQL and PowerShell runner were removed. No production/demo data
-is inserted by the new migrations.
+The user explicitly requested replacement of the V1–V7 migration chain and a reset
+of the local `nutee` database. This three-version baseline is for a new, empty
+database; it is not an upgrade path for databases that applied the previous chain.
+No production/demo data is inserted by the migrations; seed scripts remain opt-in.
 
 Other deployments must be deliberately reset or given a separately reviewed data
 migration before adopting this baseline. Do not use Flyway repair, automatic
@@ -23,7 +20,7 @@ After this reset, subsequent schema changes must use new migration versions.
 
 | Migration | Responsibility |
 | --- | --- |
-| `V1__init_schema.sql` | Creates all 23 ERD tables, columns, sequences via SERIAL, and column defaults. No INSERT, ALTER, REFERENCES, or explicit index/relational constraint declarations. |
+| `V1__init_schema.sql` | Creates 24 domain tables, columns, sequences and defaults. No INSERT, ALTER, REFERENCES, or explicit index/relational constraint declarations. |
 | `V2__add_constraints.sql` | Named PK, FK, UNIQUE and CHECK constraints, plus explicit NOT NULL requirements. All constraints are validated immediately on the empty baseline. |
 | `V3__create_indexes.sql` | Explicit lookup indexes, expression uniqueness and partial unique indexes. Avoids redundant indexes where a V2 PK/UNIQUE index already supplies the needed prefix. |
 
@@ -74,8 +71,7 @@ are no legacy migration columns or backfills in this fresh baseline.
 * Reviews reference a purchased `order_item_id`; their product is derived through
   `order_items.variant_id`. Review histories retain authors and revisions.
   Aftersale requests also require an order item, with no nullable legacy exception.
-* The updated order-item shape contains only its price snapshot; the prior
-  product-name/SKU snapshot extension is superseded by the supplied ERD.
+* Order items retain product-name/SKU/image/configuration and original-price snapshots.
 * Source attributes on `event_logs` remain attributes; no extra analytics FKs
   were inferred. Foreign keys use default NO ACTION behavior; there are no
   cascading deletes of purchases, requests, or review history.
@@ -141,28 +137,28 @@ Run the suite using JDK 21 and Docker with PostgreSQL 16 containers:
 .\mvnw.cmd verify
 ```
 
-The integration schema contains 25 domain tables plus `flyway_schema_history` (V6 adds two payment tables).
-Flyway must apply the three baseline migrations plus V4/V5/V6/V7, validate their checksums, and apply
+The integration schema contains 24 domain tables plus `flyway_schema_history`.
+Flyway must apply the three baseline migrations, validate their checksums, and apply
 zero migrations on a second run. The separate migration smoke-test fixture is
 retained because it tests Flyway infrastructure and is not an application schema
 migration or catalog seed.
 
 ## Account profile and delivery contacts
 
-V4 originally added nullable recipient/phone copies to each delivery address.
-V7 removes those columns, together with orders.recipient, orders.phone and orders.address_line,
-without rewriting V4/V6. Contacts now come from users.full_name/users.phone, and orders use
+The fresh baseline does not add recipient/phone copies to addresses or orders.
+Contacts come from users.full_name/users.phone, and orders use
 the existing orders.user_address_id FK. Province, ward and street remain separate existing fields.
 Profile updates change only `users.full_name` and `users.phone`; no auth contract changes.
 Address mutations lock the owner row before switching defaults and retain the partial
 unique index and order-address FK. See [Account API](account-api.md).
 
-V5 adds voucher minimum/cap fields and unique normalized promotion/voucher codes.
+The baseline includes voucher minimum/cap fields and unique normalized promotion/voucher codes.
 Promotion uses the existing products.promotion_id and voucher recipients use user_vouchers.
-Quote does not create orders or consume quota. V6 checkout now creates orders and holds quota
+Quote does not create orders or consume quota. Checkout creates orders and holds quota
 under a voucher row lock, together with stock reservations and a unique per-user idempotency key.
-V6 introduces order/order-item snapshots; V7 removes only the redundant delivery contact/address
-copies, retaining price/product snapshots. Profile/address edits affect delivery details displayed on old orders;
-payment_attempts and payment_events record stable payOS codes and deduplicated callbacks.
+The baseline retains price/product snapshots without copying delivery contact/address fields.
+Profile/address edits affect delivery details displayed on old orders; transaction_logs stores
+the stable payOS session and payment_events stores deduplicated callbacks. Order cancellation
+uses the locked order status to prevent releasing stock twice without an inventory_released column.
 See [Payment API](payments-api.md) for transaction, cancellation and reconciliation rules.
 See [Discount API and seed](discounts-api.md).

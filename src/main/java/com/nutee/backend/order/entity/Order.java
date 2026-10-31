@@ -38,7 +38,6 @@ public class Order {
     @Column(name = "payment_status") private String paymentStatus;
     @Column(name = "payment_amount", precision = 18, scale = 2) private BigDecimal paymentAmount;
     @Column(name = "payment_expired_at") private Instant paymentExpiresAt;
-    @Column(name = "inventory_released") private boolean inventoryReleased;
     @Column(columnDefinition = "text") private String note;
     @CreationTimestamp @Column(name = "created_at", updatable = false) private Instant createdAt;
     @UpdateTimestamp @Column(name = "updated_at") private Instant updatedAt;
@@ -62,9 +61,9 @@ public class Order {
     /** Xác nhận chỉ từ provider đã xác minh; tiền đến sau khi đã hoàn kho cần đối soát thủ công. */
     public void paid() {
         paymentAmount = total;
-        if (inventoryReleased || "cancelled".equals(status)) { paymentStatus = "review"; return; }
+        if ("cancelled".equals(status)) { paymentStatus = "review"; return; }
         paymentStatus = "paid"; status = "confirmed";
     }
     public void review() { if (!"paid".equals(paymentStatus)) paymentStatus = "review"; }
-    public void cancelled() { status = "cancelled"; paymentStatus = "qr".equals(paymentMethod) ? "cancelled" : "unpaid"; inventoryReleased = true; }
+    public void cancelled() { status = "cancelled"; paymentStatus = "qr".equals(paymentMethod) ? "cancelled" : "unpaid"; }
 }

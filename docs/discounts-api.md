@@ -58,8 +58,8 @@ body sai 400, thiếu phiên 401, thiếu CSRF/quyền 403. Request ghi đều q
 
 ## Migration và seed
 
-V5 thêm vouchers.min_order, max_discount và unique index mã không phân biệt hoa thường.
-Giữ nguyên dữ liệu, bảng và migration đã áp dụng. Sau khi backend áp dụng V5 và đã có catalog mẫu:
+Baseline V1–V3 tạo `vouchers.min_order`, `max_discount` và unique index mã không
+phân biệt hoa thường. Sau khi backend khởi tạo schema mới và đã có catalog mẫu:
 
 ```powershell
 .\scripts\seed-discounts.ps1

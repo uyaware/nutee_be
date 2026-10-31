@@ -21,6 +21,7 @@ ALTER TABLE order_items ADD CONSTRAINT pk_order_items PRIMARY KEY (id);
 ALTER TABLE aftersale_requests ADD CONSTRAINT pk_aftersale_requests PRIMARY KEY (id);
 ALTER TABLE aftersale_request_histories ADD CONSTRAINT pk_aftersale_request_histories PRIMARY KEY (id);
 ALTER TABLE transaction_logs ADD CONSTRAINT pk_transaction_logs PRIMARY KEY (id);
+ALTER TABLE payment_events ADD CONSTRAINT pk_payment_events PRIMARY KEY (id);
 ALTER TABLE product_variants ADD CONSTRAINT pk_product_variants PRIMARY KEY (id);
 ALTER TABLE review_histories ADD CONSTRAINT pk_review_histories PRIMARY KEY (id);
 ALTER TABLE event_logs ADD CONSTRAINT pk_event_logs PRIMARY KEY (id);
@@ -33,6 +34,9 @@ ALTER TABLE product_images ADD CONSTRAINT uk_product_images_product_id_id UNIQUE
 ALTER TABLE variant_specifications ADD CONSTRAINT uk_variant_specifications_name UNIQUE (variant_id, specification_name);
 ALTER TABLE cart_items ADD CONSTRAINT uk_cart_items_user_variant UNIQUE (user_id, variant_id);
 ALTER TABLE orders ADD CONSTRAINT uk_orders_order_code UNIQUE (order_code);
+ALTER TABLE transaction_logs ADD CONSTRAINT uk_transaction_logs_order UNIQUE (order_id);
+ALTER TABLE transaction_logs ADD CONSTRAINT uk_transaction_logs_gateway_code UNIQUE (gateway_order_code);
+ALTER TABLE transaction_logs ADD CONSTRAINT uk_transaction_logs_external_id UNIQUE (external_id);
 
 ALTER TABLE user_addresses ADD CONSTRAINT fk_user_addresses_user
     FOREIGN KEY (user_id) REFERENCES users (id);
@@ -114,6 +118,9 @@ ALTER TABLE orders ADD CONSTRAINT ck_orders_discount_amount CHECK (discount_amou
 ALTER TABLE orders ADD CONSTRAINT ck_orders_payment_amount CHECK (payment_amount >= 0);
 ALTER TABLE review_histories ADD CONSTRAINT ck_review_histories_rating CHECK (rating BETWEEN 1 AND 5);
 ALTER TABLE transaction_logs ADD CONSTRAINT ck_transaction_logs_attempt_count CHECK (attempt_count >= 0);
+ALTER TABLE transaction_logs ADD CONSTRAINT ck_transaction_logs_amount CHECK (amount > 0);
+ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_min_order CHECK (min_order >= 0);
+ALTER TABLE vouchers ADD CONSTRAINT ck_vouchers_max_discount CHECK (max_discount IS NULL OR max_discount > 0);
 
 ALTER TABLE users
     ALTER COLUMN created_at SET NOT NULL,
@@ -196,7 +203,21 @@ ALTER TABLE aftersale_request_histories
 ALTER TABLE transaction_logs
     ALTER COLUMN created_at SET NOT NULL,
     ALTER COLUMN updated_at SET NOT NULL,
-    ALTER COLUMN order_id SET NOT NULL;
+    ALTER COLUMN order_id SET NOT NULL,
+    ALTER COLUMN gateway_order_code SET NOT NULL,
+    ALTER COLUMN provider SET NOT NULL,
+    ALTER COLUMN amount SET NOT NULL,
+    ALTER COLUMN currency SET NOT NULL,
+    ALTER COLUMN status SET NOT NULL,
+    ALTER COLUMN expires_at SET NOT NULL;
+ALTER TABLE payment_events
+    ALTER COLUMN gateway_order_code SET NOT NULL,
+    ALTER COLUMN external_id SET NOT NULL,
+    ALTER COLUMN amount SET NOT NULL,
+    ALTER COLUMN currency SET NOT NULL,
+    ALTER COLUMN result_code SET NOT NULL,
+    ALTER COLUMN decision SET NOT NULL,
+    ALTER COLUMN received_at SET NOT NULL;
 ALTER TABLE product_variants
     ALTER COLUMN created_at SET NOT NULL,
     ALTER COLUMN updated_at SET NOT NULL,
