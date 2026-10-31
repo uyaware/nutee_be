@@ -68,6 +68,12 @@ public class User {
         emailVerified = true;
     }
 
+    /** Chỉ cập nhật thông tin liên hệ, không cho phép đổi email, mật khẩu hoặc vai trò qua hồ sơ. */
+    public void updateProfile(String name, String contactPhone) {
+        fullName = name;
+        phone = contactPhone;
+    }
+
     public void replaceRefreshToken(String token) {
         refreshToken = token;
     }

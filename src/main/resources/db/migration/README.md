@@ -6,11 +6,14 @@ the previous local database and catalog seed data.
 1. `V1__init_schema.sql`: all 23 tables, columns, SERIAL sequences and defaults.
 2. `V2__add_constraints.sql`: PK, FK, UNIQUE, CHECK and explicit NOT NULL constraints.
 3. `V3__create_indexes.sql`: explicit lookup, expression and partial unique indexes.
+4. `V4__address_contacts.sql`: adds recipient/phone to delivery addresses and backfills
+   from the owner profile where available; preserves existing address data.
 
 Authentication refresh-token/password-reset fields remain in V1 for compatibility.
-No seed INSERTs or legacy backfills are included. Hibernate only validates.
+No seed INSERTs are included. Hibernate only validates.
 
-This chain requires an empty database. Existing databases using the old chain
+The V1–V3 reset baseline requires an empty database. V4 upgrades databases already
+using that baseline. Existing databases using the pre-reset chain
 need a deliberate reset or a separate data migration; do not repair/baseline away
 checksum mismatches. Future changes must be new immutable versions.
 See `docs/schema-decisions.md` for the source ERD and typing/relationship decisions.

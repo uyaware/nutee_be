@@ -1,8 +1,9 @@
 # Kết nối Google Auth với NUTEE
 
 Frontend đã có nút Google và backend đã có API xác minh Google ID token.
-Bạn chỉ cần tạo OAuth Web Client ID và điền cấu hình. Hiện cấu hình được giữ
-`GOOGLE_AUTH_ENABLED=false`, Client ID để trống theo yêu cầu; tài liệu này không tự bật Google.
+Trang Bảo mật tài khoản đã có chức năng liên kết Google và hiển thị trạng thái liên kết.
+Để dùng Google thật, cấu hình OAuth Web Client ID khớp giữa backend và frontend.
+Giá trị mặc định trong template tắt Google; cấu hình thực tế được đọc từ file local hoặc môi trường.
 
 ## 1. Tạo Client ID
 
@@ -113,8 +114,10 @@ Google login xử lý theo các trường hợp:
 | Email chưa tồn tại | Tạo CUSTOMER rồi đăng nhập |
 | Email đã tồn tại nhưng chưa liên kết Google | `409`; cần đăng nhập tài khoản đó trước để liên kết |
 
-Backend đã có API liên kết. Frontend hiện chưa có nút liên kết trong trang tài khoản.
-Khi thêm giao diện này, dùng luồng sau:
+Backend và frontend đều đã có liên kết. Mở **Tài khoản → Bảo mật** (`/account/security`),
+trong phần **Liên kết Google**, chọn Google có cùng email với tài khoản NUTEE.
+Giao diện đọc `googleLinked` từ `/api/v1/account/profile`; tài khoản đã liên kết sẽ hiển thị
+trạng thái thay cho nút. Luồng hiện tại:
 
 1. Đăng nhập bằng email/mật khẩu vào tài khoản NUTEE cần liên kết.
 2. Lấy **nonce mới**, khởi tạo GIS với nonce đó và để người dùng chọn Google cùng email.
@@ -138,7 +141,8 @@ Khi thêm giao diện này, dùng luồng sau:
    }
    ```
 
-4. API trả `200` kèm user. Sau đó có thể đăng xuất và đăng nhập lại bằng Google.
+4. API trả `200` kèm user. Giao diện cập nhật phiên và trạng thái liên kết; sau đó có thể
+   đăng xuất và đăng nhập lại bằng Google. Nếu thất bại, hiển thị lỗi và lấy nonce mới để thử lại.
 
 Đường dẫn đầy đủ là `POST /api/v1/auth/social/google/link`. API cần cookie đăng nhập,
 CSRF và nonce mới; không tái sử dụng credential/nonce đã gửi cho login.

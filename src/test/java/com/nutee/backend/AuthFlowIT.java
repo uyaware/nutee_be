@@ -262,11 +262,18 @@ class AuthFlowIT {
         String username = username();
         JsonNode local = register(username);
         given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
+                "other@example.invalid", "Other Google User", null));
+        mvc.perform(post("/api/v1/auth/social/google/link").with(csrf())
+                .cookie(new Cookie("nutee_google_nonce", NONCE))
+                .cookie(new Cookie("accessToken", local.path("accessToken").asText()))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"credential\":\"google-token\"}"))
+                .andExpect(status().isConflict());
+        given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
                 username + "@example.com", "Google User", null));
         googleLogin(409);
-        mvc.perform(post("/api/v1/auth/google/link").with(csrf()).cookie(new Cookie("nutee_google_nonce", NONCE))
+        mvc.perform(post("/api/v1/auth/social/google/link").with(csrf()).cookie(new Cookie("nutee_google_nonce", NONCE))
                 .cookie(new Cookie("accessToken", local.path("accessToken").asText()))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"idToken\":\"google-token\"}"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"credential\":\"google-token\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.emailVerified").value(true));
         JsonNode linked = googleLogin(200);
         assertThat(linked.path("user").path("id")).isEqualTo(local.path("user").path("id"));

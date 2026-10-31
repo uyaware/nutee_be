@@ -127,7 +127,9 @@ public class AuthService {
 
     /** Liên kết provider với tài khoản đang đăng nhập; email phải khớp và liên kết không được thuộc người khác. */
     public UserResponse linkSocial(UUID userId, String provider, SocialIdentity identity) {
-        User user = activeUser(userId);
+        User user = users.findLockedById(userId)
+                .orElseThrow(() -> new BadCredentialsException("Invalid account."));
+        if (!user.isActive()) throw new BadCredentialsException("Invalid account.");
         if (!user.getEmail().equalsIgnoreCase(identity.email())) {
             throw new ApiException(HttpStatus.CONFLICT, "Provider email must match the signed-in account email.");
         }

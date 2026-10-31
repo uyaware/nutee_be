@@ -6,11 +6,12 @@ JUnit 5, Mockito and PostgreSQL Testcontainers. Spring Boot manages dependency v
 
 This modular monolith implements database migrations, authentication and public
 catalog APIs for products, variants, brands and categories, plus authenticated
-variant-based cart operations. Order, payment, shipping, after-sales mutations
-and catalog administration are not implemented.
+variant-based cart operations, account profile updates and delivery addresses.
+Order, payment, shipping, after-sales mutations and catalog administration are not implemented.
 
 Catalog setup and API reference: [docs/catalog-api.md](docs/catalog-api.md).
 Cart endpoints and concurrency rules: [docs/cart-api.md](docs/cart-api.md).
+Profile/address endpoints and ownership rules: [docs/account-api.md](docs/account-api.md).
 
 ## Run locally on Windows
 
@@ -38,8 +39,9 @@ Never overwrite `.env` with the template after initialization: that would replac
 configuration needed by the existing database. Changing POSTGRES_PASSWORD does not
 change an already initialized PostgreSQL role's password.
 
-The application applies three Flyway migrations before JPA validates its mappings:
-`V1__init_schema.sql`, `V2__add_constraints.sql`, and `V3__create_indexes.sql`.
+The application applies four Flyway migrations before JPA validates its mappings:
+`V1__init_schema.sql`, `V2__add_constraints.sql`, `V3__create_indexes.sql`,
+`V4__address_contacts.sql`. V4 adds recipient/phone and preserves existing data.
 This fresh baseline follows the updated ERD. The old local database and catalog
 seed were explicitly removed; create an empty database before restarting the API.
 Catalog data is never seeded automatically. Existing deployments of the previous migration chain
@@ -206,12 +208,14 @@ frontend/API hosting. Google setup: [create a client ID](https://developers.goog
 The frontend uses `/api/v1/auth` for registration, login, Google login, current
 user, refresh and logout. Vite proxies `/api/v1` to localhost:8080; production needs
 the same reverse proxy or an explicit `VITE_API_BASE_URL` plus backend CORS origins.
-Frontend reads the current profile directly from /auth/me. Browser-storage services
+Frontend reads account details and Google-link status from `/account/profile` and
+updates profile/address records through the authenticated account APIs. `/auth/me`
+still supplies the login session. Browser-storage services
 and seed data have been removed. Existing UI, styles and client-side interactions
 are preserved; screens without backend APIs use empty data and cannot simulate saves.
 
-Flyway V2 adds only `users.password_reset_hash` and `password_reset_expires_at`;
-V1 is unchanged. Reset links contain a random 256-bit token, stored only as SHA-256,
+The baseline retains `users.password_reset_hash` and `password_reset_expires_at`.
+Reset links contain a random 256-bit token, stored only as SHA-256,
 expire after 15 minutes, and are consumed atomically with a user-row lock. A new
 link replaces the old link; requests for the same account have a 60-second cooldown.
 Unknown, disabled and Google-only accounts receive the same public response.

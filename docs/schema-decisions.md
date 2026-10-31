@@ -142,7 +142,16 @@ Run the suite using JDK 21 and Docker with PostgreSQL 16 containers:
 ```
 
 The integration schema contains 23 domain tables plus `flyway_schema_history`.
-Flyway must apply exactly three migrations, validate their checksums, and apply
+Flyway must apply the three baseline migrations plus V4, validate their checksums, and apply
 zero migrations on a second run. The separate migration smoke-test fixture is
 retained because it tests Flyway infrastructure and is not an application schema
 migration or catalog seed.
+
+## Account profile and delivery contacts
+
+The requested profile/address feature adds V4 without changing the applied baseline.
+Each address now has nullable `recipient VARCHAR(80)` and `phone VARCHAR(10)`, backfilled
+from the owner when available. Province, ward and street remain separate existing fields.
+Profile updates change only `users.full_name` and `users.phone`; no auth contract changes.
+Address mutations lock the owner row before switching defaults and retain the partial
+unique index and order-address FK. See [Account API](account-api.md).
