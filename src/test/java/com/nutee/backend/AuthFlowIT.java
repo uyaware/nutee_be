@@ -1,0 +1,348 @@
+package com.nutee.backend;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nutee.backend.auth.service.AuthService;
+import com.nutee.backend.auth.service.SocialIdentity;
+import com.nutee.backend.auth.service.GoogleTokenVerifier;
+import com.nutee.backend.security.HmacTokenService;
+import com.nutee.backend.user.repository.UserRepository;
+import jakarta.servlet.http.Cookie;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+@SpringBootTest(properties = "app.security.cors.allowed-origins=http://localhost:3000")
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Testcontainers
+class AuthFlowIT {
+    private static final String PASSWORD = "StrongPassword!123";
+    private static final String NONCE = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @Autowired private MockMvc mvc;
+    @Autowired private ObjectMapper json;
+    @Autowired private UserRepository users;
+    @Autowired private PasswordEncoder passwords;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private AuthService auth;
+    @Autowired private HmacTokenService tokens;
+    @MockitoBean private GoogleTokenVerifier google;
+
+    @BeforeEach
+    void configureGoogleStrategy() {
+        given(google.name()).willReturn("GOOGLE");
+    }
+
+    @Test
+    void registrationHashesPasswordAndReturnsSafeTokensAndUser() throws Exception {
+        String username = username();
+        JsonNode response = register(username);
+        var user = users.findByUsernameIgnoreCase(username).orElseThrow();
+        assertThat(passwords.matches(PASSWORD, user.getPassword())).isTrue();
+        assertThat(user.getPassword()).isNotEqualTo(PASSWORD);
+        assertThat(user.isEmailVerified()).isFalse();
+        assertThat(response.path("user").has("password")).isFalse();
+        assertThat(response.path("user").has("refreshToken")).isFalse();
+        assertThat(response.path("user").path("role").asText()).isEqualTo("CUSTOMER");
+        assertThat(response.path("expiresIn").asLong()).isEqualTo(900);
+        String stored = jdbc.queryForObject("SELECT refresh_token FROM users WHERE id = ?",
+                String.class, user.getId());
+        assertThat(stored).isEqualTo(response.path("refreshToken").asText());
+    }
+
+    @Test
+    void registrationAcceptsFrontendEmailAndPasswordWithoutUsername() throws Exception {
+        String email = username() + "@example.com";
+        mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("email", email, "password", PASSWORD))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.user.username").isNotEmpty())
+                .andExpect(jsonPath("$.user.email").value(email));
+    }
+
+    @Test
+    void loginAcceptsEmailOrUsernameWithoutCaseSensitivity() throws Exception {
+        String username = username();
+        register(username);
+        for (String identifier : new String[]{username.toUpperCase(), (username + "@example.com").toUpperCase()}) {
+            mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", PASSWORD))))
+                    .andExpect(status().isOk()).andExpect(header().exists("Set-Cookie"));
+        }
+    }
+
+    @Test
+    void newLoginReplacesRefreshTokenAndOldLogoutCannotClearIt() throws Exception {
+        String username = username();
+        JsonNode original = register(username);
+        var result = mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        JsonNode latest = cookieSession(result);
+        refresh(original.path("refreshToken").asText(), 401);
+        mvc.perform(post("/api/v1/auth/logout").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .cookie(new Cookie("refreshToken", original.path("refreshToken").asText())))
+                .andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("SELECT refresh_token FROM users WHERE username = ?", String.class,
+                username)).isEqualTo(latest.path("refreshToken").asText());
+        refresh(latest.path("refreshToken").asText(), 200);
+    }
+
+    @Test
+    void wrongPasswordAndUnknownUserReturnSameUnauthorizedShape() throws Exception {
+        String username = username();
+        register(username);
+        for (String identifier : new String[]{username, "unknown_" + username}) {
+            mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", "wrong-password"))))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.detail").value("Authentication is required."));
+        }
+    }
+
+    @Test
+    void duplicatesAreRejectedCaseInsensitively() throws Exception {
+        String username = username();
+        register(username);
+        for (Map<String, String> request : java.util.List.of(
+                Map.of("username", username.toUpperCase(), "email", username + "other@example.com", "password", PASSWORD),
+                Map.of("username", username + "other", "email", (username + "@example.com").toUpperCase(), "password", PASSWORD))) {
+            mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(request))).andExpect(status().isConflict());
+        }
+    }
+
+    @Test
+    void validationRejectsWeakAndOverlongUtf8Passwords() throws Exception {
+        for (String password : new String[]{"short", "é".repeat(40)}) {
+            String username = username();
+            mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(Map.of("username", username, "email", username + "@example.com",
+                            "password", password)))).andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void accessAndRefreshTokensCannotBeSubstituted() throws Exception {
+        JsonNode response = register(username());
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("accessToken").asText())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(response.path("user").path("id").asText()));
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("refreshToken").asText())))
+                .andExpect(status().isUnauthorized());
+        refresh(response.path("accessToken").asText(), 401);
+        refresh("invalid-token", 401);
+    }
+
+    @Test
+    void rotationRejectsOldTokenAndKeepsCurrentTokenUsable() throws Exception {
+        JsonNode original = register(username());
+        JsonNode rotated = refresh(original.path("refreshToken").asText(), 200);
+        assertThat(rotated.path("refreshToken").asText()).isNotEqualTo(original.path("refreshToken").asText());
+        refresh(original.path("refreshToken").asText(), 401);
+        assertThat(tokens.decodeRefresh(rotated.path("refreshToken").asText()).getExpiresAt())
+                .isEqualTo(tokens.decodeRefresh(original.path("refreshToken").asText()).getExpiresAt());
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", rotated.path("accessToken").asText())))
+                .andExpect(status().isOk());
+        refresh(rotated.path("refreshToken").asText(), 200);
+    }
+
+    @Test
+    void logoutClearsRefreshTokenAndAccessRemainsValidUntilExpiry() throws Exception {
+        JsonNode response = register(username());
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(post("/api/v1/auth/logout").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .cookie(new Cookie("refreshToken", response.path("refreshToken").asText())))
+                    .andExpect(status().isNoContent());
+        }
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("accessToken").asText())))
+                .andExpect(status().isOk());
+        refresh(response.path("refreshToken").asText(), 401);
+        assertThat(jdbc.queryForObject("SELECT refresh_token FROM users WHERE id = ?", String.class,
+                UUID.fromString(response.path("user").path("id").asText()))).isNull();
+    }
+
+    @Test
+    void disabledAccountsCannotLoginRefreshOrUseExistingAccess() throws Exception {
+        String username = username();
+        JsonNode response = register(username);
+        jdbc.update("UPDATE users SET is_active = false WHERE username = ?", username);
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", response.path("accessToken").asText())))
+                .andExpect(status().isUnauthorized());
+        refresh(response.path("refreshToken").asText(), 401);
+        mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void expiredRefreshTokenIsRejectedEvenWhenStoredOnUser() throws Exception {
+        JsonNode response = register(username());
+        UUID id = UUID.fromString(response.path("user").path("id").asText());
+        var user = users.findById(id).orElseThrow();
+        String expired = tokens.issue(user, Instant.now().minusSeconds(60)).refreshToken();
+        jdbc.update("UPDATE users SET refresh_token = ? WHERE id = ?", expired, id);
+        refresh(expired, 401);
+    }
+
+    @Test
+    void concurrentRefreshOnlyAcceptsTheStoredTokenOnce() throws Exception {
+        JsonNode response = register(username());
+        String refreshToken = response.path("refreshToken").asText();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var task = (java.util.concurrent.Callable<Boolean>) () -> {
+                start.await();
+                try { auth.refresh(refreshToken); return true; }
+                catch (BadCredentialsException exception) { return false; }
+            };
+            var first = pool.submit(task);
+            var second = pool.submit(task);
+            start.countDown();
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+        }
+        assertThatThrownBy(() -> auth.refresh(refreshToken)).isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void googleCreatesUserAndSubsequentLoginFindsSameProviderIdentity() throws Exception {
+        String email = username() + "@example.com";
+        given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
+                email, "Google User", "https://example.com/photo"));
+        JsonNode first = googleLogin(200);
+        JsonNode second = googleLogin(200);
+        assertThat(second.path("user").path("id")).isEqualTo(first.path("user").path("id"));
+        var user = users.findByEmailIgnoreCase(email).orElseThrow();
+        assertThat(user.getPassword()).isNull();
+        assertThat(user.isEmailVerified()).isTrue();
+        mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("identifier", email, "password", PASSWORD))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void googleDoesNotAutoLinkExistingEmailButAllowsAuthenticatedLinking() throws Exception {
+        String username = username();
+        JsonNode local = register(username);
+        given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
+                "other@example.invalid", "Other Google User", null));
+        mvc.perform(post("/api/v1/auth/social/google/link").with(csrf())
+                .cookie(new Cookie("nutee_google_nonce", NONCE))
+                .cookie(new Cookie("accessToken", local.path("accessToken").asText()))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"credential\":\"google-token\"}"))
+                .andExpect(status().isConflict());
+        given(google.verify(anyString(), anyString())).willReturn(new SocialIdentity(UUID.randomUUID().toString(),
+                username + "@example.com", "Google User", null));
+        googleLogin(409);
+        mvc.perform(post("/api/v1/auth/social/google/link").with(csrf()).cookie(new Cookie("nutee_google_nonce", NONCE))
+                .cookie(new Cookie("accessToken", local.path("accessToken").asText()))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"credential\":\"google-token\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.emailVerified").value(true));
+        JsonNode linked = googleLogin(200);
+        assertThat(linked.path("user").path("id")).isEqualTo(local.path("user").path("id"));
+    }
+
+    @Test
+    void googleRequiresNonceAndRejectsInvalidCredential() throws Exception {
+        mvc.perform(post("/api/v1/auth/google").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idToken\":\"google-token\"}")).andExpect(status().isUnauthorized());
+        given(google.verify(anyString(), anyString())).willThrow(new BadCredentialsException("Invalid Google token"));
+        googleLogin(401);
+        var nonceResponse = mvc.perform(get("/api/v1/auth/google/nonce")).andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store")).andReturn().getResponse();
+        Cookie cookie = nonceResponse.getCookie("nutee_google_nonce");
+        assertThat(cookie).isNotNull();
+        assertThat(cookie.isHttpOnly()).isTrue();
+        assertThat(cookie.getMaxAge()).isEqualTo(300);
+        assertThat(cookie.getValue()).hasSize(43);
+    }
+
+    @Test
+    void corsAllowsOnlyExplicitFrontendOrigin() throws Exception {
+        mvc.perform(options("/api/v1/auth/login").header("Origin", "http://localhost:3000")
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "Content-Type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:3000"));
+        mvc.perform(options("/api/v1/auth/login").header("Origin", "https://attacker.example")
+                .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isForbidden());
+    }
+
+    private JsonNode register(String username) throws Exception {
+        var response = mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("username", username, "email", username + "@example.com",
+                        "password", PASSWORD, "role", "ADMIN"))))
+                .andExpect(status().isCreated()).andExpect(header().string("Cache-Control", "no-store"))
+                .andReturn().getResponse();
+        return cookieSession(response);
+    }
+
+    private JsonNode refresh(String token, int expected) throws Exception {
+        var response = mvc.perform(post("/api/v1/auth/refresh").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .cookie(new Cookie("refreshToken", token)))
+                .andExpect(status().is(expected)).andReturn().getResponse();
+        return cookieSession(response);
+    }
+
+    private JsonNode googleLogin(int expected) throws Exception {
+        var response = mvc.perform(post("/api/v1/auth/google").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .cookie(new Cookie("nutee_google_nonce", NONCE)).content("{\"idToken\":\"google-token\"}"))
+                .andExpect(status().is(expected)).andReturn().getResponse();
+        return cookieSession(response);
+    }
+
+    // Tokens are extracted only from HttpOnly Set-Cookie for server-side integration assertions.
+    private JsonNode cookieSession(org.springframework.mock.web.MockHttpServletResponse response) throws Exception {
+        var body = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(response.getContentAsString());
+        assertThat(body.has("accessToken")).isFalse();
+        assertThat(body.has("refreshToken")).isFalse();
+        for (String name : new String[]{"accessToken", "refreshToken"}) {
+            Cookie cookie = response.getCookie(name);
+            if (cookie != null && !cookie.getValue().isBlank()) {
+                assertThat(cookie.isHttpOnly()).isTrue();
+                body.put(name, cookie.getValue());
+            }
+        }
+        return body;
+    }
+
+    private static String username() { return "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12); }
+}
