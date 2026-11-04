@@ -21,3 +21,13 @@
 Thumbs.db
 /.tools/
 /.secrets/
+docs
+
+# Local AI instructions and tools
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.agents/
+.codex/
+.claude/
+.cursor/
