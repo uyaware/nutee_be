@@ -12,17 +12,14 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.mail.MailSendException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 class PasswordResetServiceTest {
     private final UserRepository users = mock(UserRepository.class);
-    private final JavaMailSender mail = mock(JavaMailSender.class);
+    private final GmailService mail = mock(GmailService.class);
     private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder(4);
     private final PasswordResetService service = new PasswordResetService(users, passwords, mail,
-            "http://localhost:5173/reset-password", "no-reply@nutee.local", true);
+            "http://localhost:5173/reset-password", true);
     private User user;
 
     @BeforeEach
@@ -37,7 +34,7 @@ class PasswordResetServiceTest {
     @Test
     void disabledRecoveryDoesNotAccessAccountsOrSendEmails() {
         var disabled = new PasswordResetService(users, passwords, mail,
-                "http://localhost:5173/reset-password", "no-reply@nutee.local", false);
+                "http://localhost:5173/reset-password", false);
         assertThatThrownBy(() -> disabled.forgot("test@example.com")).isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> disabled.reset("token", "Password12345!")).isInstanceOf(ApiException.class);
         verifyNoInteractions(users, mail);
@@ -47,9 +44,9 @@ class PasswordResetServiceTest {
     void sendsOneTimeLinkStoresOnlyHashAndResetRevokesRefresh() {
         user.replaceRefreshToken("old-refresh");
         service.forgot(" TEST@EXAMPLE.COM ");
-        var sent = ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mail).send(sent.capture());
-        String token = sent.getValue().getText().split("#token=")[1].split("\n")[0];
+        var sent = ArgumentCaptor.forClass(String.class);
+        verify(mail).sendPasswordReset(eq(user.getEmail()), sent.capture());
+        String token = sent.getValue().split("#token=")[1];
         assertThat(token).matches("[A-Za-z0-9_-]{43}");
         assertThat(user.getPasswordResetHash()).isEqualTo(PasswordResetService.hash(token)).isNotEqualTo(token);
         assertThat(user.getPasswordResetExpiresAt()).isAfter(Instant.now());
@@ -78,10 +75,10 @@ class PasswordResetServiceTest {
         service.forgot(user.getEmail());
         String oldHash = user.getPasswordResetHash();
         service.forgot(user.getEmail());
-        verify(mail, times(1)).send(any(SimpleMailMessage.class));
+        verify(mail, times(1)).sendPasswordReset(anyString(), anyString());
         user.requestPasswordReset(oldHash, Instant.now().plusSeconds(800));
         service.forgot(user.getEmail());
-        verify(mail, times(2)).send(any(SimpleMailMessage.class));
+        verify(mail, times(2)).sendPasswordReset(anyString(), anyString());
         assertThat(user.getPasswordResetHash()).isNotEqualTo(oldHash);
     }
 
@@ -97,7 +94,7 @@ class PasswordResetServiceTest {
 
     @Test
     void deliveryFailurePreservesPreviousLinkAndDoesNotExposeAccount() {
-        doThrow(new MailSendException("unavailable")).when(mail).send(any(SimpleMailMessage.class));
+        doThrow(new GmailService.DeliveryException()).when(mail).sendPasswordReset(anyString(), anyString());
         assertThatCode(() -> service.forgot(user.getEmail())).doesNotThrowAnyException();
         assertThat(user.getPasswordResetHash()).isNull();
     }

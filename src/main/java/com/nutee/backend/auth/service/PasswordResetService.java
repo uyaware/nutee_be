@@ -15,9 +15,6 @@ import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,16 +28,14 @@ public class PasswordResetService {
 
     private final UserRepository users;
     private final PasswordEncoder passwords;
-    private final JavaMailSender mail;
+    private final GmailService mail;
     private final String resetUrl;
-    private final String from;
     private final boolean enabled;
     private final SecureRandom random = new SecureRandom();
 
     /** Nhận cấu hình gửi mail và kiểm tra URL khôi phục đáng tin cậy. */
-    public PasswordResetService(UserRepository users, PasswordEncoder passwords, JavaMailSender mail,
+    public PasswordResetService(UserRepository users, PasswordEncoder passwords, GmailService mail,
             @Value("${app.password-reset.url}") String resetUrl,
-            @Value("${app.password-reset.from}") String from,
             @Value("${app.password-reset.enabled:false}") boolean enabled) {
         URI uri = URI.create(resetUrl);
         if (uri.getHost() == null || !("http".equals(uri.getScheme()) || "https".equals(uri.getScheme()))
@@ -51,7 +46,6 @@ public class PasswordResetService {
         this.passwords = passwords;
         this.mail = mail;
         this.resetUrl = resetUrl;
-        this.from = from;
         this.enabled = enabled;
     }
 
@@ -75,17 +69,11 @@ public class PasswordResetService {
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(from);
-        message.setTo(user.getEmail());
-        message.setSubject("NUTEE - Đặt lại mật khẩu");
         // Dùng fragment để token không xuất hiện trong HTTP access log hoặc Referer.
-        message.setText("Mở liên kết sau để đặt lại mật khẩu (hết hạn sau 15 phút):\n"
-                + resetUrl + "#token=" + token + "\nNếu bạn không yêu cầu, hãy bỏ qua email này.");
         try {
-            mail.send(message);
+            mail.sendPasswordReset(user.getEmail(), resetUrl + "#token=" + token);
             user.requestPasswordReset(hash(token), now.plus(TOKEN_TTL));
-        } catch (MailException exception) {
+        } catch (GmailService.DeliveryException exception) {
             // Giữ phản hồi chung để không tiết lộ email có tài khoản; không log token hay nội dung mail.
             log.warn("Password reset email delivery failed");
         }

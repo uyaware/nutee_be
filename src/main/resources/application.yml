@@ -32,17 +32,6 @@ spring:
     time-zone: UTC
     deserialization:
       accept-float-as-int: false
-  mail:
-    host: ${MAIL_HOST:localhost}
-    port: ${MAIL_PORT:1025}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
-    properties:
-      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
-      mail.smtp.starttls.enable: ${MAIL_STARTTLS:false}
-      mail.smtp.connectiontimeout: 5000
-      mail.smtp.timeout: 5000
-      mail.smtp.writetimeout: 5000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -90,7 +79,10 @@ app:
   password-reset:
     enabled: ${PASSWORD_RESET_ENABLED:false}
     url: ${PASSWORD_RESET_URL:http://localhost:5173/reset-password}
-    from: ${MAIL_FROM:no-reply@nutee.local}
+    gmail:
+      client-id: ${GMAIL_CLIENT_ID:}
+      client-secret: ${GMAIL_CLIENT_SECRET:}
+      refresh-token: ${GMAIL_REFRESH_TOKEN:}
   security:
     cookies:
       secure: ${AUTH_SECURE_COOKIE:true}

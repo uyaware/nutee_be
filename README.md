@@ -120,7 +120,7 @@ Các chức năng sau có thể để tắt nếu chỉ cần chạy backend và
 
 - **Google:** đặt `GOOGLE_AUTH_ENABLED=true` và `GOOGLE_CLIENT_ID` trong `.env` để bật đăng nhập Google.
 - **payOS:** đặt `PAYOS_ENABLED=true`, `PAYOS_CLIENT_ID`, `PAYOS_API_KEY` và `PAYOS_CHECKSUM_KEY` theo thông tin merchant. `PAYMENT_FRONTEND_URL` là địa chỉ frontend nhận kết quả. Mặc định payOS tắt.
-- **Email đặt lại mật khẩu:** cấu hình các biến `MAIL_*`, đặt `PASSWORD_RESET_ENABLED=true` và `PASSWORD_RESET_URL` trỏ tới frontend. Để dùng Mailpit local với Docker, chạy `docker compose up -d mailpit`; SMTP mặc định là `localhost:1025` và hộp thư thử nghiệm tại [http://localhost:8025](http://localhost:8025).
+- **Email đặt lại mật khẩu:** bật Gmail API trong Google Cloud, tạo OAuth client và cấp quyền `https://www.googleapis.com/auth/gmail.send` cho hộp thư gửi với quyền truy cập ngoại tuyến để nhận refresh token. Cấu hình `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `PASSWORD_RESET_URL`, sau đó đặt `PASSWORD_RESET_ENABLED=true`. Các thông tin này chỉ đặt trong biến môi trường của backend; hộp thư Gmail đã cấp quyền là người gửi. Xem [hướng dẫn OAuth của Google](https://developers.google.com/identity/protocols/oauth2/web-server) và [Gmail API](https://developers.google.com/workspace/gmail/api/guides/sending). Dự án OAuth ở trạng thái thử nghiệm có thể có refresh token hết hạn sau 7 ngày.
 - **Frontend local:** `CORS_ALLOWED_ORIGINS` trong `.env.example` cho phép `http://localhost:3000` và `http://localhost:5173`. Cập nhật danh sách nếu frontend chạy ở địa chỉ khác.
 
 ## Xử lý lỗi khi chạy
