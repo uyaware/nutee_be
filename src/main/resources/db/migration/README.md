@@ -8,6 +8,8 @@ local NUTEE database. This chain is for an empty database, not an in-place upgra
 3. `V3__create_indexes.sql`: explicit lookup, expression and partial unique indexes.
 4. `V4__move_payment_details_to_orders.sql`: moves payment/QR details into `orders`,
    transfers old event records to `transaction_logs`, and removes `payment_events`.
+5. `V5__allow_system_order_history.sql`: allows a null actor on system-generated
+   order history entries, without changing existing records.
 The current schema has 23 domain tables. `orders` is the only payment state;
 `transaction_logs` records each verified webhook delivery, including duplicates.
 Legacy session rows are retained with `status=legacy_session`; old event payloads

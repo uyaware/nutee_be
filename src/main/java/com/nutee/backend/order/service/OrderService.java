@@ -9,6 +9,8 @@ import com.nutee.backend.order.entity.Order;
 import com.nutee.backend.order.item.entity.OrderItem;
 import com.nutee.backend.order.item.repository.OrderItemRepository;
 import com.nutee.backend.order.repository.OrderRepository;
+import com.nutee.backend.order.repository.OrderHistoryRepository;
+import com.nutee.backend.order.entity.OrderHistory;
 import com.nutee.backend.product.variant.repository.ProductVariantRepository;
 import com.nutee.backend.cart.repository.CartItemRepository;
 import com.nutee.backend.user.repository.UserRepository;
@@ -33,6 +35,7 @@ public class OrderService {
     private final UserRepository users;
     private final UserAddressRepository addresses;
     private final OrderRepository orders;
+    private final OrderHistoryRepository histories;
     private final OrderItemRepository items;
     private final ProductVariantRepository variants;
     private final CartItemRepository cart;
@@ -66,6 +69,7 @@ public class OrderService {
         if ("qr".equals(request.paymentMethod()) && total > 0 && !gateway.enabled()) throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Thanh toán payOS chưa được cấu hình. Bạn có thể chọn COD.");
         Order order = orders.saveAndFlush(Order.create(user, request.idempotencyKey(), hash, address, request.note(), request.paymentMethod(),
                 quote.subtotal(), quote.promotionDiscount(), quote.voucherDiscount(), Math.toIntExact(properties.shippingFee()), voucher == null ? null : voucher.getId(), Instant.now().plusSeconds(properties.expiryMinutes() * 60L)));
+        histories.save(OrderHistory.create(order.getId(), userId, order.getStatus()));
         var byId = locked.stream().collect(Collectors.toMap(value -> value.getId(), value -> value));
         for (var row : quote.items()) {
             var variant = byId.get(row.variantId()); variant.reserve(row.quantity());
@@ -79,6 +83,11 @@ public class OrderService {
     }
 
     public OrderResponse get(UUID userId, int id) { active(userId); return response(owned(userId, id)); }
+    public List<OrderHistoryResponse> history(UUID userId, int id) {
+        active(userId);
+        owned(userId, id);
+        return histories.findByOrderIdOrderByOccurredAtAscIdAsc(id).stream().map(OrderHistoryResponse::from).toList();
+    }
     public PageResponse<OrderResponse> list(UUID userId, int page, int size, String status, String search) {
         active(userId);
         if (!Set.of("all", "pending", "confirmed", "packing", "shipping", "delivered", "cancelled").contains(status)) throw new ApiException(HttpStatus.BAD_REQUEST, "Trạng thái đơn không hợp lệ.");
@@ -96,7 +105,7 @@ public class OrderService {
     public OrderResponse response(Order order) {
         return response(order, items.findByOrderIdOrderByIdAsc(order.getId()));
     }
-    private OrderResponse response(Order order, List<OrderItem> orderItems) {
+    public OrderResponse response(Order order, List<OrderItem> orderItems) {
         var user = order.getUser();
         var address = order.getAddress();
         String addressLine = address == null ? null : java.util.stream.Stream.of(address.getStreet(), address.getWardCommune(), address.getProvinceCity())

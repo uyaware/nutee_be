@@ -80,6 +80,15 @@ public class Order {
     public void review() { if (!"paid".equals(paymentStatus)) paymentStatus = "review"; }
     public void cancelled() { status = "cancelled"; paymentStatus = "qr".equals(paymentMethod) ? "cancelled" : "unpaid"; }
 
+    /** Xử lý tiến trình đơn; COD được ghi nhận đã thu khi giao thành công. */
+    public void advance(String next) {
+        status = next;
+        if ("delivered".equals(next) && "cod".equals(paymentMethod)) {
+            paymentStatus = "paid";
+            paymentAmount = total;
+        }
+    }
+
     /** Đếm lần tạo để phản hồi cũ không ghi đè lần thử mới; service giữ khóa dòng đơn. */
     public int startPayment() {
         paymentStatus = "creating";

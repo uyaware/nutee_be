@@ -4,6 +4,8 @@ import com.nutee.backend.common.exception.ApiException;
 import com.nutee.backend.order.entity.Order;
 import com.nutee.backend.order.item.repository.OrderItemRepository;
 import com.nutee.backend.order.repository.OrderRepository;
+import com.nutee.backend.order.repository.OrderHistoryRepository;
+import com.nutee.backend.order.entity.OrderHistory;
 import com.nutee.backend.payment.entity.*;
 import com.nutee.backend.payment.port.PaymentGateway;
 import com.nutee.backend.payment.repository.*;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service @RequiredArgsConstructor @Transactional
 public class PaymentTransactions {
     private final OrderRepository orders;
+    private final OrderHistoryRepository histories;
     private final TransactionLogRepository logs;
     private final OrderItemRepository items;
     private final ProductVariantRepository variants;
@@ -81,7 +84,12 @@ public class PaymentTransactions {
             else if (!"VND".equals(event.currency()) || order.getTotal().longValueExact() != event.amount() || !matchesLink(order, event.externalId())) {
                 decision = "mismatch"; order.review();
             } else if ("paid".equals(order.getPaymentStatus())) decision = "additional_payment";
-            else { order.paid(); decision = "paid".equals(order.getPaymentStatus()) ? "paid" : "late_payment"; }
+            else {
+                String previousStatus = order.getStatus();
+                order.paid();
+                recordSystemStatusChange(order, previousStatus);
+                decision = "paid".equals(order.getPaymentStatus()) ? "paid" : "late_payment";
+            }
         }
         logs.save(new TransactionLog(order == null ? null : order.getId(), event, body, headers, decision));
         return decision;
@@ -89,14 +97,28 @@ public class PaymentTransactions {
 
     /** Kết quả API payOS đã xác minh hỗ trợ webhook mất/chậm và hủy/hết hạn, không tin browser redirect. */
     public void reconciled(int id, PaymentGateway.State state) {
+        reconcile(id, state, null);
+    }
+
+    /** Hủy link đã khởi tạo chỉ sau khi payOS xác nhận; lịch sử giữ người yêu cầu. */
+    public View reconcileCancellation(int id, PaymentGateway.State state, UUID actor) {
+        return reconcile(id, state, actor);
+    }
+
+    private View reconcile(int id, PaymentGateway.State state, UUID actor) {
         var order = orders.findLockedById(id).orElseThrow();
         if (state.orderCode() != order.getGatewayOrderCode() || state.amount() != order.getTotal().longValueExact() || !matchesLink(order, state.externalId())) throw conflict("Kết quả đối soát không khớp.");
-        if ("paid".equals(order.getPaymentStatus())) return;
-        if ("PAID".equals(state.status()) && state.amountPaid() == order.getTotal().longValueExact()) order.paid();
+        if ("paid".equals(order.getPaymentStatus())) return view(order);
+        if ("PAID".equals(state.status()) && state.amountPaid() == order.getTotal().longValueExact()) {
+            String previousStatus = order.getStatus();
+            order.paid();
+            recordSystemStatusChange(order, previousStatus);
+        }
         else if (state.amountPaid() > 0 || "review".equals(order.getPaymentStatus())) order.review();
-        else if (Set.of("CANCELLED", "EXPIRED").contains(state.status())) { release(order); if ("EXPIRED".equals(state.status())) order.paymentExpired(); }
+        else if (Set.of("CANCELLED", "EXPIRED").contains(state.status())) { release(order, actor); if ("EXPIRED".equals(state.status())) order.paymentExpired(); }
         else if (!Set.of("review", "cancelled", "expired").contains(order.getPaymentStatus())) order.paymentPending();
         order.touchPayment();
+        return view(order);
     }
     public void reconciliationFailed(int id) { orders.findLockedById(id).ifPresent(Order::touchPayment); }
     public void expireUnstarted(int id) {
@@ -107,20 +129,55 @@ public class PaymentTransactions {
         var order = ownedLocked(owner, id);
         if (order.getIdempotencyKey() == null || !"qr".equals(order.getPaymentMethod()) || "paid".equals(order.getPaymentStatus())) throw conflict("Đơn không thể hủy.");
         if (order.getPaymentAttemptCount() > 0) return false;
-        release(order); return true;
+        release(order, owner); return true;
     }
     public void cancelCod(UUID owner, int id) {
         var order = ownedLocked(owner, id);
         if (!"cod".equals(order.getPaymentMethod()) || order.getIdempotencyKey() == null || !Set.of("pending", "cancelled").contains(order.getStatus()) || "paid".equals(order.getPaymentStatus())) throw conflict("Đơn không thể hủy.");
-        release(order);
+        release(order, owner);
+    }
+
+    /** Nhân viên chỉ hủy COD chưa thu tiền, trước khi bàn giao vận chuyển. */
+    public void cancelManagementCod(UUID actor, int id) {
+        var order = orders.findLockedById(id).orElseThrow(this::missing);
+        if (!"cod".equals(order.getPaymentMethod()) || order.getIdempotencyKey() == null
+                || order.getStatus() == null || !Set.of("pending", "confirmed", "packing").contains(order.getStatus())
+                || !"unpaid".equals(order.getPaymentStatus())) {
+            throw conflict("Đơn này không thể hủy hoặc cần đối soát thanh toán.");
+        }
+        release(order, actor);
+    }
+
+    /** Kiểm tra và khóa đơn trước khi yêu cầu payOS hủy link, không giữ khóa khi gọi mạng. */
+    public Snapshot prepareManagementQrCancellation(UUID actor, int id) {
+        var order = orders.findLockedById(id).orElseThrow(this::missing);
+        if (!"qr".equals(order.getPaymentMethod()) || order.getIdempotencyKey() == null
+                || order.getStatus() == null || !Set.of("pending", "confirmed", "packing").contains(order.getStatus())
+                || order.getPaymentStatus() == null || !Set.of("new", "pending", "creating", "error", "expired", "cancelled").contains(order.getPaymentStatus())) {
+            throw conflict("Đơn đã thanh toán hoặc không thể hủy.");
+        }
+        if (order.getPaymentAttemptCount() == 0) {
+            release(order, actor);
+            return null;
+        }
+        return new Snapshot(id, order.getGatewayOrderCode(), order.getTotal().longValueExact(), order.getPaymentExpiresAt());
     }
     private void release(Order order) {
+        release(order, null);
+    }
+    private void release(Order order, UUID actor) {
         if ("cancelled".equals(order.getStatus())) return;
         if ("paid".equals(order.getPaymentStatus())) throw conflict("Đơn đã được thanh toán.");
         var rows = items.reservations(order.getId());
         var locked = variants.findLockedByIdIn(rows.stream().map(OrderItemRepository.Reservation::getVariantId).toList(), Sort.by("id"));
         var quantities = new HashMap<Integer, Integer>(); rows.forEach(item -> quantities.merge(item.getVariantId(), item.getQuantity(), Integer::sum));
         locked.forEach(variant -> variant.release(quantities.get(variant.getId()))); order.cancelled();
+        histories.save(OrderHistory.create(order.getId(), actor, order.getStatus()));
+    }
+    private void recordSystemStatusChange(Order order, String previousStatus) {
+        if (!Objects.equals(previousStatus, order.getStatus())) {
+            histories.save(OrderHistory.create(order.getId(), null, order.getStatus()));
+        }
     }
     private Order ownedLocked(UUID owner, int id) { active(owner); var order = orders.findLockedById(id).orElseThrow(() -> missing()); if (!order.getUserId().equals(owner)) throw missing(); return order; }
     private void active(UUID owner) { if (users.findById(owner).filter(user -> user.isActive()).isEmpty()) throw new BadCredentialsException("Invalid account."); }

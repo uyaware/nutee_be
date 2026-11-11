@@ -54,6 +54,11 @@ public class OrderController {
         return orders.get(UUID.fromString(jwt.getSubject()), id);
     }
 
+    @GetMapping("/orders/{id}/history")
+    public List<OrderHistoryResponse> history(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
+        return orders.history(UUID.fromString(jwt.getSubject()), id);
+    }
+
     @PostMapping("/orders/{id}/payment")
     public ResponseEntity<PaymentTransactions.View> pay(@AuthenticationPrincipal Jwt jwt, @PathVariable @Min(1) int id) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(payments.create(UUID.fromString(jwt.getSubject()), id));

@@ -100,6 +100,83 @@ class PaymentIT {
         mvc.perform(get("/api/v1/orders").cookie(customer)).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(2));
     }
 
+    @Test void orderHistoryAndManagementReadsEnforceOwnershipAndRoles() throws Exception {
+        cart.add(OWNER, 11, 1);
+        var order = orders.create(OWNER, request("cod", 10025000));
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
+        var staffCookie = cookie(staff.getId());
+        var other = users.saveAndFlush(User.create("other_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Other", false, null));
+        mvc.perform(get("/api/v1/management/orders").cookie(customer)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/orders/" + order.id() + "/history").cookie(cookie(other.getId())))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/management/orders?q=" + order.code()).cookie(staffCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(order.id()));
+        mvc.perform(get("/api/v1/orders/" + order.id() + "/history").cookie(customer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].status").value("pending"));
+        mvc.perform(post("/api/v1/orders/" + order.id() + "/cancel").cookie(customer).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("cancelled"));
+        mvc.perform(get("/api/v1/management/orders/" + order.id() + "/history").cookie(staffCookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[1].status").value("cancelled"));
+    }
+
+    @Test void staffHandlesCodAndCannotCancelAfterShipping() throws Exception {
+        cart.add(OWNER, 11, 1);
+        int id = orders.create(OWNER, request("cod", 10025000)).id();
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
+        var staffCookie = cookie(staff.getId());
+        String path = "/api/v1/management/orders/" + id + "/status";
+        for (String next : List.of("confirmed", "packing", "shipping", "delivered")) {
+            mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"" + next + "\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.status").value(next));
+        }
+        assertThat(orders.get(OWNER, id).paymentStatus()).isEqualTo("paid");
+        mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"cancelled\"}"))
+                .andExpect(status().isConflict());
+        assertThat(jdbc.queryForList("select order_status from order_histories where order_id = ? order by occurred_at, id", String.class, id))
+                .containsExactly("pending", "confirmed", "packing", "shipping", "delivered");
+    }
+
+    @Test void payosMustBePaidBeforeHandlingAndCannotBeCancelledAfterPayment() throws Exception {
+        int id = qr(); long code = code(id);
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
+        var staffCookie = cookie(staff.getId());
+        String path = "/api/v1/management/orders/" + id + "/status";
+        mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"confirmed\"}"))
+                .andExpect(status().isConflict());
+        payments.webhook(webhook(code, 10025000, "VND", "link" + code, "order-workflow", "00"));
+        assertThat(orders.get(OWNER, id).paymentStatus()).isEqualTo("paid");
+        assertThat(orders.get(OWNER, id).status()).isEqualTo("confirmed");
+        assertThat(jdbc.queryForList("select order_status from order_histories where order_id = ? order by occurred_at, id", String.class, id))
+                .containsExactly("pending", "confirmed");
+        assertThat(jdbc.queryForObject("select count(*) from order_histories where order_id = ? and order_status = 'confirmed' and updated_by is null", Integer.class, id)).isEqualTo(1);
+        mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"cancelled\"}"))
+                .andExpect(status().isConflict());
+        mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"packing\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("packing"));
+    }
+
+    @Test void staffCancellationOfUnpaidPayosRequiresProviderConfirmation() throws Exception {
+        int id = qr(); long code = code(id);
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
+        var staffCookie = cookie(staff.getId());
+        String path = "/api/v1/management/orders/" + id + "/status";
+        when(gateway.cancel(code)).thenReturn(new PaymentGateway.State(code, 10025000, 0, "link" + code, "PENDING"));
+        mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"cancelled\"}"))
+                .andExpect(status().isConflict());
+        assertThat(orders.get(OWNER, id).status()).isEqualTo("pending");
+        assertThat(stock()).isEqualTo(1);
+        when(gateway.cancel(code)).thenReturn(new PaymentGateway.State(code, 10025000, 0, "link" + code, "CANCELLED"));
+        mvc.perform(post(path).cookie(staffCookie).with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"cancelled\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("cancelled"));
+        assertThat(stock()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select updated_by from order_histories where order_id = ? and order_status = 'cancelled'", UUID.class, id))
+                .isEqualTo(staff.getId());
+    }
+
     @Test void qrCheckoutCreatesPaymentAndPersistsQrForReloadAndRetry() throws Exception {
         cart.add(OWNER, 11, 1);
         var body = request("qr", 10025000);
@@ -280,6 +357,7 @@ class PaymentIT {
         jdbc.update("UPDATE orders SET payment_expired_at = ? WHERE id = ?", java.sql.Timestamp.from(Instant.now().minusSeconds(1)), qr);
         payments.reconcile(); payments.reconcile();
         assertThat(orders.get(OWNER, qr).status()).isEqualTo("cancelled"); assertThat(stock()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("select count(*) from order_histories where order_id = ? and order_status = 'cancelled' and updated_by is null", Integer.class, qr)).isEqualTo(1);
         verify(gateway, never()).create(any());
     }
 

@@ -39,7 +39,17 @@ public class PaymentService {
         var state = snapshot.expiresAt().isAfter(Instant.now()) ? gateway.retrieve(snapshot.code()) : gateway.cancel(snapshot.code());
         transactions.reconciled(id, state); return transactions.get(owner, id);
     }
-    public void cancel(UUID owner, int id) { if (transactions.cancelUnstartedQr(owner, id)) return; var snapshot = transactions.snapshot(owner, id); transactions.reconciled(id, gateway.cancel(snapshot.code())); }
+    public void cancel(UUID owner, int id) { if (transactions.cancelUnstartedQr(owner, id)) return; var snapshot = transactions.snapshot(owner, id); transactions.reconcileCancellation(id, gateway.cancel(snapshot.code()), owner); }
+
+    /** Staff hủy đơn QR chưa thanh toán; chỉ hoàn kho sau xác nhận từ payOS. */
+    public void cancelManagementQr(UUID actor, int id) {
+        var snapshot = transactions.prepareManagementQrCancellation(actor, id);
+        if (snapshot == null) return;
+        var result = transactions.reconcileCancellation(id, gateway.cancel(snapshot.code()), actor);
+        if (!Set.of("cancelled", "expired").contains(result.status())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Không thể hủy: thanh toán đã thành công hoặc chưa được payOS xác nhận hủy.");
+        }
+    }
     public void webhook(String body) { webhook(body, Map.of()); }
 
     /** Lưu payload nhận được sau khi xác minh chữ ký; không đưa cookie/token vào log webhook. */

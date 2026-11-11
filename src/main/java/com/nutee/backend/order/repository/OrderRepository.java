@@ -11,9 +11,15 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.lang.Nullable;
 
 /** Đếm đơn đang giữ/đã dùng mã; đơn hủy không chiếm lượt, không tạo lịch sử sử dụng giả. */
-public interface OrderRepository extends JpaRepository<Order, Integer> {
+public interface OrderRepository extends JpaRepository<Order, Integer>, JpaSpecificationExecutor<Order> {
+    @Override
+    @EntityGraph(attributePaths = {"user", "address"})
+    Page<Order> findAll(@Nullable Specification<Order> specification, Pageable pageable);
     @EntityGraph(attributePaths = {"user", "address"})
     Optional<Order> findByUserIdAndIdempotencyKey(UUID userId, UUID key);
     @EntityGraph(attributePaths = {"user", "address"})
