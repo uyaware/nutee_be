@@ -39,6 +39,20 @@ public class ProductVariant {
     private Integer price;
     private Integer quantity;
 
+    public static ProductVariant create(Product product, String sku, int price, int quantity, ProductImage image) {
+        ProductVariant variant = new ProductVariant();
+        variant.product = product;
+        variant.update(sku, price, quantity, image);
+        return variant;
+    }
+
+    public void update(String sku, int price, int quantity, ProductImage image) {
+        this.sku = sku;
+        this.price = price;
+        this.quantity = quantity;
+        this.image = image;
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

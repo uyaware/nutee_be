@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 
 /** Repository JPA cho thông số biến thể và projection dựng bộ lọc. */
 public interface VariantSpecificationRepository extends JpaRepository<VariantSpecification, Integer> {
+    List<VariantSpecification> findByVariant_IdOrderById(Integer variantId);
     List<VariantSpecification> findByVariant_IdIn(List<Integer> ids, Sort sort);
 
     /** Giữ JPQL để DISTINCT trên cặp tên/giá trị thay vì ID entity, đồng thời lọc biến thể công khai hợp lệ. */

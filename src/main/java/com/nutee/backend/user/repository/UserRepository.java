@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import java.util.List;
 
 /** Truy cập tài khoản và khóa dòng khi thay đổi phiên hoặc tiêu thụ mã khôi phục. */
 public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
@@ -16,6 +18,11 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     /** Khóa tài khoản trong transaction để hai request không thể cùng dùng một refresh token. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findLockedById(UUID id);
+
+    /** Khóa tất cả admin theo cùng thứ tự để ngăn hạ quyền admin cuối cùng đồng thời. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.role = 'ADMIN' and u.active = true order by u.id")
+    List<User> findActiveAdminsLocked();
 
     Optional<User> findByEmailIgnoreCase(String email);
     Optional<User> findByUsernameIgnoreCase(String username);

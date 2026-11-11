@@ -9,9 +9,17 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import java.util.Optional;
 
 /** Repository JPA cho sản phẩm, hỗ trợ Specification và tải quan hệ sau phân trang. */
 public interface ProductRepository extends JpaRepository<Product, Integer>, JpaSpecificationExecutor<Product> {
+    long countByBrand_Id(Integer brandId);
+    long countByCategories_Id(Integer categoryId);
+    Page<Product> findByNameContainingIgnoreCase(String name, Pageable pageable);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Product> findLockedById(Integer id);
     /** Fetch quan hệ cho các ID đã phân trang; không fetch collection trong query phân trang. */
     @EntityGraph(attributePaths = {"brand", "categories", "promotion"})
     List<Product> findDistinctByIdIn(List<Integer> ids);

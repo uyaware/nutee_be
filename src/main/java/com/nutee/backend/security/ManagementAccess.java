@@ -18,4 +18,11 @@ public class ManagementAccess {
         return users.findById(UUID.fromString(authentication.getName()))
                 .filter(user -> user.isActive() && "ADMIN".equals(user.getRole())).isPresent();
     }
+
+    @Transactional(readOnly = true)
+    public boolean isStaffOrAdmin(Authentication authentication) {
+        return users.findById(UUID.fromString(authentication.getName()))
+                .filter(user -> user.isActive() && ("ADMIN".equals(user.getRole()) || "STAFF".equals(user.getRole())))
+                .isPresent();
+    }
 }

@@ -50,6 +50,24 @@ public class Product {
     private Promotion promotion;
 
     public void assignPromotion(Promotion rule) { promotion = rule; }
+
+    public static Product create(String name, String description, boolean published, Brand brand, Set<Category> categories) {
+        Product product = new Product();
+        product.avgRating = BigDecimal.ZERO;
+        product.soldCount = 0;
+        product.update(name, description, published, brand, categories, null);
+        return product;
+    }
+
+    public void update(String name, String description, boolean published, Brand brand, Set<Category> categories, Integer defaultVariantId) {
+        this.name = name;
+        this.description = description;
+        this.published = published;
+        this.brand = brand;
+        this.categories.clear();
+        this.categories.addAll(categories);
+        this.defaultVariantId = defaultVariantId;
+    }
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "brand_id")
     private Brand brand;

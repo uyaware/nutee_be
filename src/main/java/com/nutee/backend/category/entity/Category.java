@@ -32,6 +32,17 @@ public class Category {
     @JoinColumn(name = "parent")
     private Category parent;
 
+    public static Category create(String name, Category parent) {
+        Category category = new Category();
+        category.update(name, parent);
+        return category;
+    }
+
+    public void update(String name, Category parent) {
+        this.name = name;
+        this.parent = parent;
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

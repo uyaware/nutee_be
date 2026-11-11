@@ -35,6 +35,14 @@ public class VariantSpecification {
     @Column(name = "specification_value", nullable = false, columnDefinition = "text")
     private String specificationValue;
 
+    public static VariantSpecification create(ProductVariant variant, String name, String value) {
+        VariantSpecification specification = new VariantSpecification();
+        specification.variant = variant;
+        specification.specificationName = name;
+        specification.specificationValue = value;
+        return specification;
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

@@ -7,5 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 /** Repository Spring Data JPA cho ảnh sản phẩm. */
 public interface ProductImageRepository extends JpaRepository<ProductImage, Integer> {
+    List<ProductImage> findByProduct_IdOrderById(Integer productId);
     List<ProductImage> findByProduct_IdIn(List<Integer> ids, Sort sort);
 }

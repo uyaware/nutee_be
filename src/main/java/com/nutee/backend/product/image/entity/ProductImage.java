@@ -35,6 +35,18 @@ public class ProductImage {
     @Column(name = "is_primary", nullable = false)
     private boolean primaryImage;
 
+    public static ProductImage create(Product product, String url, boolean primary) {
+        ProductImage image = new ProductImage();
+        image.product = product;
+        image.update(url, primary);
+        return image;
+    }
+
+    public void update(String url, boolean primary) {
+        imageUrl = url;
+        primaryImage = primary;
+    }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

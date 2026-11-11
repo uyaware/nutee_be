@@ -26,6 +26,14 @@ public class Brand {
 
     private String name;
 
+    public static Brand create(String name) {
+        Brand brand = new Brand();
+        brand.rename(name);
+        return brand;
+    }
+
+    public void rename(String name) { this.name = name; }
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

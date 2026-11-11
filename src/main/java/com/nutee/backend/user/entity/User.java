@@ -78,6 +78,13 @@ public class User {
         refreshToken = token;
     }
 
+    /** Đổi quyền hoặc khóa tài khoản đồng thời thu hồi phiên làm mới hiện tại. */
+    public void updateAccess(String newRole, boolean newActive) {
+        if (!role.equals(newRole) || active != newActive) refreshToken = null;
+        role = newRole;
+        active = newActive;
+    }
+
     /** Lưu hash và thời hạn mã khôi phục, thay mã yêu cầu trước đó. */
     public void requestPasswordReset(String hash, Instant expiresAt) {
         passwordResetHash = hash;
