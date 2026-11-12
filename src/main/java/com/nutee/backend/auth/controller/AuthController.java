@@ -44,7 +44,7 @@ public class AuthController {
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest body,
             HttpServletRequest request, HttpServletResponse response) {
         AuthResponse session = auth.register(body);
-        cookies.login(request, response, session, false);
+        cookies.login(request, response, session);
         return ResponseEntity.created(URI.create("/api/v1/auth/me")).cacheControl(CacheControl.noStore()).body(session);
     }
 
@@ -54,7 +54,7 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest body,
             HttpServletRequest request, HttpServletResponse response) {
         AuthResponse session = auth.login(body);
-        cookies.login(request, response, session, body.remember());
+        cookies.login(request, response, session);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
     }
 
@@ -63,11 +63,10 @@ public class AuthController {
     @SecurityRequirements
     public ResponseEntity<AuthResponse> refresh(
             @CookieValue(name = JwtCookies.REFRESH, required = false) String refreshToken,
-            @CookieValue(name = JwtCookies.REMEMBER, defaultValue = "false") boolean remember,
             HttpServletRequest request, HttpServletResponse response) {
         try {
             AuthResponse session = auth.refresh(refreshToken);
-            cookies.issue(response, session, remember);
+            cookies.issue(response, session);
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
         } catch (BadCredentialsException exception) {
             cookies.clear(request, response);

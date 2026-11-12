@@ -90,22 +90,21 @@ class JwtAuthWebTest {
             assertThat(cookie.isHttpOnly()).isTrue();
             assertThat(cookie.getPath()).isEqualTo("/api/v1");
             assertThat(cookie.getAttribute("SameSite")).isEqualTo("Lax");
-            assertThat(cookie.getMaxAge()).isEqualTo(-1);
+            assertThat(cookie.getMaxAge()).isEqualTo(name.equals("accessToken") ? 900 : 604800);
         }
         mvc.perform(get("/api/v1/auth/me").cookie(response.getCookie("accessToken"), response.getCookie("refreshToken")))
                 .andExpect(status().isOk());
     }
 
     @Test
-    void rememberMakesCookiesPersistentAndRefreshNeedsOnlyCookies() throws Exception {
+    void persistentCookiesRefreshWithoutRememberPreference() throws Exception {
         var response = mvc.perform(postWithCsrf("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"identifier\":\"test@example.com\",\"password\":\"Password12345!\",\"remember\":true}"))
+                .content("{\"identifier\":\"test@example.com\",\"password\":\"Password12345!\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse();
         assertThat(response.getCookie("accessToken").getMaxAge()).isEqualTo(900);
         assertThat(response.getCookie("refreshToken").getMaxAge()).isEqualTo(604800);
         mvc.perform(postWithCsrf("/api/v1/auth/refresh")
-                .cookie(new Cookie("refreshToken", "refresh-jwt"), new Cookie("accessToken", "expired-access"),
-                        new Cookie("rememberLogin", "true")))
+                .cookie(new Cookie("refreshToken", "refresh-jwt"), new Cookie("accessToken", "expired-access")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.refreshToken").doesNotExist())
                 .andExpect(cookie().maxAge("refreshToken", 604800));
         verify(auth).refresh("refresh-jwt");
@@ -123,6 +122,7 @@ class JwtAuthWebTest {
             mvc.perform(postWithCsrf("/api/v1/auth" + path).cookie(nonce).contentType(MediaType.APPLICATION_JSON)
                     .content("{\"idToken\":\"provider-credential\"}"))
                     .andExpect(status().isOk()).andExpect(cookie().httpOnly("accessToken", true))
+                    .andExpect(cookie().maxAge("accessToken", 900)).andExpect(cookie().maxAge("refreshToken", 604800))
                     .andExpect(jsonPath("$.accessToken").doesNotExist());
         }
         verify(auth, times(2)).socialLogin("GOOGLE", identity);

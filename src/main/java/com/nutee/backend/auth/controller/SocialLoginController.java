@@ -54,13 +54,13 @@ public class SocialLoginController {
     @PostMapping({"/social/{provider}", "/{provider:google}"})
     @SecurityRequirements
     public ResponseEntity<AuthResponse> login(@PathVariable String provider,
-            @Valid @RequestBody SocialLoginRequest body, @RequestParam(defaultValue = "false") boolean remember,
+            @Valid @RequestBody SocialLoginRequest body,
             HttpServletRequest request, HttpServletResponse response) {
         var strategy = provider(provider);
         String nonce = consumeNonce(strategy.name(), request, response);
         var identity = strategy.verify(body.credential(), nonce);
         AuthResponse session = auth.socialLogin(strategy.name(), identity);
-        cookies.login(request, response, session, remember);
+        cookies.login(request, response, session);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
     }
 

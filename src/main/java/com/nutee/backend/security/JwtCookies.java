@@ -21,16 +21,15 @@ public class JwtCookies {
     private final CsrfTokenRepository csrfTokens;
 
     /** Đặt cookie cho phiên đăng nhập mới và yêu cầu trình duyệt lấy CSRF mới. */
-    public void login(HttpServletRequest request, HttpServletResponse response, AuthResponse tokens, boolean remember) {
-        issue(response, tokens, remember);
+    public void login(HttpServletRequest request, HttpServletResponse response, AuthResponse tokens) {
+        issue(response, tokens);
         csrfTokens.saveToken(null, request, response);
     }
 
     /** Ghi cặp JWT vào cookie HttpOnly; chỉ đặt Max-Age khi người dùng chọn ghi nhớ. */
-    public void issue(HttpServletResponse response, AuthResponse tokens, boolean remember) {
-        add(response, ACCESS, tokens.accessToken(), remember ? tokens.expiresIn() : null);
-        add(response, REFRESH, tokens.refreshToken(), remember ? tokens.refreshExpiresIn() : null);
-        add(response, REMEMBER, Boolean.toString(remember), remember ? tokens.refreshExpiresIn() : null);
+    public void issue(HttpServletResponse response, AuthResponse tokens) {
+        add(response, ACCESS, tokens.accessToken(), tokens.expiresIn());
+        add(response, REFRESH, tokens.refreshToken(), tokens.refreshExpiresIn());
     }
 
     /** Xóa cookie của phiên và CSRF, kể cả khi access token đã hết hạn. */
