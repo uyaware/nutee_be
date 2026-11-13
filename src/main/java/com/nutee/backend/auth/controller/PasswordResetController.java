@@ -24,12 +24,12 @@ public class PasswordResetController {
     public ResponseEntity<Map<String, String>> forgot(@Valid @RequestBody ForgotPasswordRequest request) {
         passwords.forgot(request.email());
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Map.of("message",
-                "Nếu email có tài khoản phù hợp, bạn sẽ nhận được liên kết đặt lại mật khẩu."));
+                "Nếu email có tài khoản phù hợp, bạn sẽ nhận được mã OTP 6 số để đặt lại mật khẩu."));
     }
 
     @PostMapping(value = "/reset-password", consumes = "application/json")
     public ResponseEntity<Void> reset(@Valid @RequestBody ResetPasswordRequest request) {
-        passwords.reset(request.token(), request.password());
+        passwords.reset(request.email(), request.otp(), request.password());
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 }

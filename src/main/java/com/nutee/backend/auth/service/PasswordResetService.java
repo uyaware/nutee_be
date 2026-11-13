@@ -9,7 +9,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
@@ -66,13 +65,13 @@ public class PasswordResetService {
                 && user.getPasswordResetExpiresAt().isAfter(now.plus(TOKEN_TTL.minus(RESEND_INTERVAL)))) {
             return;
         }
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        // Dùng fragment để token không xuất hiện trong HTTP access log hoặc Referer.
+        String otp;
+        do {
+            otp = String.format(Locale.ROOT, "%06d", random.nextInt(1_000_000));
+        } while (hash(user.getId() + ":" + otp).equals(user.getPasswordResetHash()));
         try {
-            mail.sendPasswordReset(user.getEmail(), resetUrl + "#token=" + token);
-            user.requestPasswordReset(hash(token), now.plus(TOKEN_TTL));
+            mail.sendPasswordResetOtp(user.getEmail(), resetUrl, otp);
+            user.requestPasswordReset(hash(user.getId() + ":" + otp), now.plus(TOKEN_TTL));
         } catch (GmailService.DeliveryException exception) {
             // Giữ phản hồi chung để không tiết lộ email có tài khoản; không log token hay nội dung mail.
             log.warn("Password reset email delivery failed");
@@ -80,16 +79,25 @@ public class PasswordResetService {
     }
 
     /** Tiêu thụ mã còn hạn trong transaction, đổi mật khẩu và hủy phiên refresh cũ. */
-    @Transactional
-    public void reset(String token, String password) {
+    @Transactional(noRollbackFor = ApiException.class)
+    public void reset(String email, String otp, String password) {
         requireEnabled();
         if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Mật khẩu tối đa 72 byte UTF-8.");
         }
-        var user = users.findByPasswordResetHash(hash(token))
+        var found = users.findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT))
                 .orElseThrow(PasswordResetService::invalidToken);
-        if (!user.isActive() || user.getPasswordResetExpiresAt() == null
+        var user = users.findLockedById(found.getId()).orElseThrow(PasswordResetService::invalidToken);
+        if (!user.isActive() || user.getPassword() == null || user.getPasswordResetHash() == null
+                || user.getPasswordResetAttempts() >= 5 || user.getPasswordResetExpiresAt() == null
                 || !user.getPasswordResetExpiresAt().isAfter(Instant.now())) {
+            throw invalidToken();
+        }
+        if (otp == null || !otp.matches("[0-9]{6}") || !MessageDigest.isEqual(
+                hash(user.getId() + ":" + otp).getBytes(StandardCharsets.UTF_8),
+                user.getPasswordResetHash().getBytes(StandardCharsets.UTF_8))) {
+            // noRollbackFor giữ bộ đếm nhập sai khi phản hồi lỗi; khóa dòng ngăn dò mã song song.
+            user.rejectPasswordResetOtp();
             throw invalidToken();
         }
         user.resetPassword(passwords.encode(password));
@@ -106,7 +114,7 @@ public class PasswordResetService {
     }
 
     private static ApiException invalidToken() {
-        return new ApiException(HttpStatus.BAD_REQUEST, "Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
+        return new ApiException(HttpStatus.BAD_REQUEST, "Email hoặc mã OTP không hợp lệ, đã hết hạn hoặc đã sai 5 lần. Hãy yêu cầu mã mới.");
     }
 
     private void requireEnabled() {

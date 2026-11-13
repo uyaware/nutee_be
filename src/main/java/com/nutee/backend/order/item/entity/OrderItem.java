@@ -31,6 +31,9 @@ public class OrderItem {
     @Column(name = "order_id", nullable = false)
     private Integer orderId;
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "order_id", insertable = false, updatable = false)
+    private com.nutee.backend.order.entity.Order order;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "variant_id", nullable = false)
     private ProductVariant variant;
     @Column(nullable = false)

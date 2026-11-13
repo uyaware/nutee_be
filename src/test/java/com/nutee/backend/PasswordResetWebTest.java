@@ -36,11 +36,11 @@ class PasswordResetWebTest {
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.message").isNotEmpty());
         verify(passwords).forgot("test@example.com");
-        String token = "a".repeat(43);
+        String token = "012345";
         mvc.perform(post("/api/v1/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"token\":\"" + token + "\",\"password\":\"StrongPassword123!\"}"))
+                .content("{\"email\":\"test@example.com\",\"otp\":\"" + token + "\",\"password\":\"StrongPassword123!\"}"))
                 .andExpect(status().isNoContent()).andExpect(header().string("Cache-Control", "no-store"));
-        verify(passwords).reset(token, "StrongPassword123!");
+        verify(passwords).reset("test@example.com", token, "StrongPassword123!");
     }
 
     @Test
@@ -49,7 +49,7 @@ class PasswordResetWebTest {
                 .content("{\"email\":\"invalid\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].field").value("email"));
         mvc.perform(post("/api/v1/auth/reset-password").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content("{\"token\":\"invalid\",\"password\":\"short\"}"))
+                .content("{\"email\":\"test@example.com\",\"otp\":\"invalid\",\"password\":\"short\"}"))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(passwords);
     }

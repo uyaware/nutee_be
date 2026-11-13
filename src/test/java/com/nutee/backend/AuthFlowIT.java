@@ -44,7 +44,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest(properties = "app.security.cors.allowed-origins=http://localhost:3000")
+@SpringBootTest(properties = {"app.security.cors.allowed-origins=http://localhost:3000", "app.password-reset.enabled=true"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -64,6 +64,28 @@ class AuthFlowIT {
     @Autowired private AuthService auth;
     @Autowired private HmacTokenService tokens;
     @MockitoBean private GoogleTokenVerifier google;
+    @MockitoBean private com.nutee.backend.auth.service.GmailService mail;
+    @Autowired private com.nutee.backend.auth.service.PasswordResetService passwordReset;
+
+    @Test
+    void otpFailuresCommitAcrossTransactionsAndCorrectCodeCannotBypassLimit() {
+        var user = com.nutee.backend.user.entity.User.create(username(), UUID.randomUUID() + "@example.com",
+                passwords.encode(PASSWORD), "OTP Test", true, null);
+        users.saveAndFlush(user);
+        passwordReset.forgot(user.getEmail());
+        var otp = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(mail).sendPasswordResetOtp(
+                org.mockito.ArgumentMatchers.eq(user.getEmail()), anyString(), otp.capture());
+        String wrong = otp.getValue().equals("000000") ? "000001" : "000000";
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            assertThatThrownBy(() -> passwordReset.reset(user.getEmail(), wrong, "ReplacementPassword123!"))
+                    .isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+            assertThat(users.findById(user.getId()).orElseThrow().getPasswordResetAttempts()).isEqualTo(attempt);
+        }
+        assertThatThrownBy(() -> passwordReset.reset(user.getEmail(), otp.getValue(), "ReplacementPassword123!"))
+                .isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+        assertThat(users.findById(user.getId()).orElseThrow().getPasswordResetHash()).isNull();
+    }
 
     @BeforeEach
     void configureGoogleStrategy() {

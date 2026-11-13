@@ -1,12 +1,15 @@
 package com.nutee.backend.auth.service;
 
 import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -16,6 +19,7 @@ import org.springframework.web.client.RestClientException;
 /** Gửi liên kết khôi phục bằng tài khoản Gmail đã cấp quyền gmail.send. */
 @Service
 public class GmailService {
+    private static final String RESET_TEMPLATE = loadResetTemplate();
     private final RestClient client;
     private final String clientId;
     private final String clientSecret;
@@ -49,6 +53,35 @@ public class GmailService {
 
     /** Trao đổi refresh token rồi gửi MIME message qua Gmail API. */
     public void sendPasswordReset(String recipient, String resetLink) {
+        send(recipient, renderPasswordReset(resetLink, null));
+    }
+
+    /** Gửi mã OTP sáu chữ số cùng đường dẫn nhập mã, không ghi mã vào log. */
+    public void sendPasswordResetOtp(String recipient, String resetLink, String otp) {
+        if (otp == null || !otp.matches("[0-9]{6}")) {
+            throw new IllegalArgumentException("OTP must contain exactly six digits.");
+        }
+        send(recipient, renderPasswordReset(resetLink, otp));
+    }
+
+    static String renderPasswordReset(String resetLink, String otp) {
+        String otpSection = otp == null ? "" : "<p style=\"margin:0 0 12px;font-size:15px;\">Mã xác nhận của bạn:</p>"
+                + "<p style=\"margin:0 0 24px;padding:20px;background:#edf4ff;border-radius:8px;text-align:center;"
+                + "font-size:32px;font-weight:bold;letter-spacing:8px;color:#0755d9;\">"
+                + HtmlUtils.htmlEscape(otp) + "</p>";
+        return RESET_TEMPLATE.replace("{{resetLink}}", HtmlUtils.htmlEscape(resetLink))
+                .replace("{{otpSection}}", otpSection);
+    }
+
+    private static String loadResetTemplate() {
+        try {
+            return new ClassPathResource("mail/password-reset.html").getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Password reset email template is unavailable.", exception);
+        }
+    }
+
+    private void send(String recipient, String body) {
         if (clientId.isBlank() || clientSecret.isBlank() || refreshToken.isBlank()
                 || recipient == null || recipient.contains("\r") || recipient.contains("\n")) {
             throw new DeliveryException();
@@ -66,12 +99,10 @@ public class GmailService {
                 throw new DeliveryException();
             }
             String subject = Base64.getEncoder().encodeToString("NUTEE - Đặt lại mật khẩu".getBytes(StandardCharsets.UTF_8));
-            String body = "Mở liên kết sau để đặt lại mật khẩu (hết hạn sau 15 phút):\r\n"
-                    + resetLink + "\r\nNếu bạn không yêu cầu, hãy bỏ qua email này.";
             String encodedBody = Base64.getMimeEncoder(76, new byte[] {'\r', '\n'})
                     .encodeToString(body.getBytes(StandardCharsets.UTF_8));
             String mime = "To: " + recipient + "\r\nSubject: =?UTF-8?B?" + subject + "?=\r\n"
-                    + "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+                    + "MIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n"
                     + "Content-Transfer-Encoding: base64\r\n\r\n" + encodedBody + "\r\n";
             String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(mime.getBytes(StandardCharsets.UTF_8));
             client.post().uri("https://gmail.googleapis.com/gmail/v1/users/me/messages/send")

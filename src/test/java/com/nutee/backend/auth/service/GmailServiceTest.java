@@ -16,6 +16,14 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 class GmailServiceTest {
+    @Test
+    void rendersSixDigitOtpAndEscapesLinksInHtmlEmail() {
+        String html = GmailService.renderPasswordReset("https://example.com/reset?email=a&next=b", "012345");
+        assertThat(html).contains("012345", "15 phút", "email=a&amp;next=b")
+                .doesNotContain("{{otpSection}}", "{{resetLink}}");
+        assertThatThrownBy(() -> service.sendPasswordResetOtp("test@example.com", "https://example.com", "12345"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
     private final GmailService service = new GmailService(builder.build(), "client", "secret", "refresh");
@@ -36,10 +44,10 @@ class GmailServiceTest {
                     String mime = new String(Base64.getUrlDecoder().decode(json.get("raw").asText()), StandardCharsets.UTF_8);
                     assertThat(mime).contains("To: test@example.com\r\n", "Content-Transfer-Encoding: base64");
                     String body = new String(Base64.getMimeDecoder().decode(mime.split("\r\n\r\n", 2)[1]), StandardCharsets.UTF_8);
-                    assertThat(body).contains("https://example.com/reset#token=abc", "đặt lại mật khẩu");
+                    assertThat(body).contains("https://example.com/reset#token=abc", "đặt lại mật khẩu", "012345");
                 })
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
-        service.sendPasswordReset("test@example.com", "https://example.com/reset#token=abc");
+        service.sendPasswordResetOtp("test@example.com", "https://example.com/reset#token=abc", "012345");
         server.verify();
     }
 

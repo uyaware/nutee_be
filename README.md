@@ -128,3 +128,26 @@ Các chức năng sau có thể để tắt nếu chỉ cần chạy backend và
 - **Sai mật khẩu PostgreSQL trong Docker:** volume cũ giữ tài khoản và mật khẩu đã khởi tạo; sửa `POSTGRES_PASSWORD` trong `.env` không tự đổi mật khẩu database hiện có. Dùng lại thông tin đúng của database đó.
 - **Lỗi JWT:** kiểm tra hai khóa trong `.env` là Base64 hợp lệ, giải mã được ít nhất 32 byte và khác nhau.
 - **Lỗi Flyway:** kiểm tra bạn đang kết nối đúng database và các migration đã áp dụng khớp với dự án. Không tự xóa dữ liệu hoặc sửa lịch sử migration để xử lý lỗi.
+# Hậu mãi
+
+- Khách: `GET/POST /api/v1/after-sales`, `GET /api/v1/after-sales/{id}`.
+- Nhân viên/admin: `GET /api/v1/management/after-sales`, `GET /api/v1/management/after-sales/{id}`,
+  `POST /api/v1/management/after-sales/{id}/status` với `{ "expectedStatus": "pending", "status": "reviewing" }`.
+- Tạo yêu cầu nhận `{ "orderItemId": 11, "type": "warranty", "reason": "Mô tả vấn đề", "description": "Chi tiết bổ sung" }`;
+  `type` nhận `warranty` hoặc `return`. Yêu cầu áp dụng cho toàn bộ dòng sản phẩm của đơn đã giao.
+- Trạng thái: `pending → reviewing → approved → processing → completed`, hoặc `reviewing → rejected`.
+  Trạng thái được suy ra từ lịch sử cuối; không thêm cột/bảng cho hậu mãi.
+- Chặn yêu cầu trùng đang xử lý và đổi/trả đã hoàn tất. Khóa đơn khi tạo, khóa yêu cầu khi chuyển trạng thái.
+  Quyết định hậu mãi thực hiện thủ công; API không tự hoàn tiền hoặc thay đổi tồn kho.
+- `AfterSaleServiceTest` và `AfterSaleWebTest` kiểm tra nghiệp vụ/quyền; `AfterSaleIT` kiểm tra PostgreSQL,
+  phân trang/lọc trạng thái và hai lần gửi đồng thời (chạy với Docker bằng `./mvnw verify -Dit.test=AfterSaleIT`).
+
+# Khôi phục mật khẩu bằng OTP
+
+`POST /api/v1/auth/forgot-password` nhận `{ "email": "user@example.com" }`.
+`POST /api/v1/auth/reset-password` nhận `{ "email": "user@example.com", "otp": "012345", "password": "NewPassword123!" }`.
+OTP gồm 6 chữ số, dùng một lần, có hiệu lực 15 phút; gửi lại tối thiểu 60 giây và vô hiệu sau 5 lần nhập sai.
+Flyway V6 thêm `users.password_reset_attempts` và vô hiệu liên kết khôi phục cũ khi nâng cấp.
+Email HTML nằm tại `src/main/resources/mail/password-reset.html`.
+Bật gửi thư bằng `PASSWORD_RESET_ENABLED=true`, cấu hình `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
+và `PASSWORD_RESET_URL` trỏ đến trang `/reset-password` của frontend. Secret chỉ đặt trong biến môi trường.

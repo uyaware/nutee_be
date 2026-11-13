@@ -31,6 +31,8 @@ public class User {
     private String passwordResetHash;
     @Column(name = "password_reset_expires_at")
     private Instant passwordResetExpiresAt;
+    @Column(name = "password_reset_attempts", nullable = false)
+    private int passwordResetAttempts;
     @Column(name = "full_name", length = 100)
     private String fullName;
     @Column(length = 10)
@@ -87,16 +89,24 @@ public class User {
 
     /** Lưu hash và thời hạn mã khôi phục, thay mã yêu cầu trước đó. */
     public void requestPasswordReset(String hash, Instant expiresAt) {
+        passwordResetAttempts = 0;
         passwordResetHash = hash;
         passwordResetExpiresAt = expiresAt;
     }
 
     /** Thay mật khẩu đã băm, đồng thời xóa mã khôi phục và refresh token. */
     public void resetPassword(String encoded) {
+        passwordResetAttempts = 0;
         password = encoded;
         refreshToken = null;
         passwordResetHash = null;
         passwordResetExpiresAt = null;
+    }
+
+    /** Ghi nhận lần nhập sai và vô hiệu mã sau năm lần, giữ thời hạn để giới hạn gửi lại. */
+    public void rejectPasswordResetOtp() {
+        passwordResetAttempts = Math.min(5, passwordResetAttempts + 1);
+        if (passwordResetAttempts >= 5) passwordResetHash = null;
     }
 
     @PrePersist

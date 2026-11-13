@@ -36,7 +36,7 @@ class PasswordResetServiceTest {
         var disabled = new PasswordResetService(users, passwords, mail,
                 "http://localhost:5173/reset-password", false);
         assertThatThrownBy(() -> disabled.forgot("test@example.com")).isInstanceOf(ApiException.class);
-        assertThatThrownBy(() -> disabled.reset("token", "Password12345!")).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> disabled.reset("test@example.com", "123456", "Password12345!")).isInstanceOf(ApiException.class);
         verifyNoInteractions(users, mail);
     }
 
@@ -45,17 +45,17 @@ class PasswordResetServiceTest {
         user.replaceRefreshToken("old-refresh");
         service.forgot(" TEST@EXAMPLE.COM ");
         var sent = ArgumentCaptor.forClass(String.class);
-        verify(mail).sendPasswordReset(eq(user.getEmail()), sent.capture());
-        String token = sent.getValue().split("#token=")[1];
-        assertThat(token).matches("[A-Za-z0-9_-]{43}");
-        assertThat(user.getPasswordResetHash()).isEqualTo(PasswordResetService.hash(token)).isNotEqualTo(token);
+        verify(mail).sendPasswordResetOtp(eq(user.getEmail()), anyString(), sent.capture());
+        String token = sent.getValue();
+        assertThat(token).matches("[0-9]{6}");
+        assertThat(user.getPasswordResetHash()).isEqualTo(PasswordResetService.hash(user.getId() + ":" + token)).isNotEqualTo(token);
         assertThat(user.getPasswordResetExpiresAt()).isAfter(Instant.now());
-        service.reset(token, "ReplacementPassword123!");
+        service.reset(user.getEmail(), token, "ReplacementPassword123!");
         assertThat(passwords.matches("ReplacementPassword123!", user.getPassword())).isTrue();
         assertThat(user.getRefreshToken()).isNull();
         assertThat(user.getPasswordResetHash()).isNull();
         assertThat(user.getPasswordResetExpiresAt()).isNull();
-        assertThatThrownBy(() -> service.reset(token, "ReplacementPassword123!"))
+        assertThatThrownBy(() -> service.reset(user.getEmail(), token, "ReplacementPassword123!"))
                 .isInstanceOf(ApiException.class);
     }
 
@@ -75,27 +75,49 @@ class PasswordResetServiceTest {
         service.forgot(user.getEmail());
         String oldHash = user.getPasswordResetHash();
         service.forgot(user.getEmail());
-        verify(mail, times(1)).sendPasswordReset(anyString(), anyString());
+        verify(mail, times(1)).sendPasswordResetOtp(anyString(), anyString(), anyString());
         user.requestPasswordReset(oldHash, Instant.now().plusSeconds(800));
         service.forgot(user.getEmail());
-        verify(mail, times(2)).sendPasswordReset(anyString(), anyString());
+        verify(mail, times(2)).sendPasswordResetOtp(anyString(), anyString(), anyString());
         assertThat(user.getPasswordResetHash()).isNotEqualTo(oldHash);
     }
 
     @Test
     void expiredInvalidAndOversizedPasswordRequestsCannotChangePassword() {
-        user.requestPasswordReset(PasswordResetService.hash("token"), Instant.now().minusSeconds(1));
-        assertThatThrownBy(() -> service.reset("token", "ReplacementPassword123!")).isInstanceOf(ApiException.class);
-        assertThatThrownBy(() -> service.reset("wrong", "ReplacementPassword123!")).isInstanceOf(ApiException.class);
-        user.requestPasswordReset(PasswordResetService.hash("token"), Instant.now().plusSeconds(900));
-        assertThatThrownBy(() -> service.reset("token", "ấ".repeat(30))).isInstanceOf(ApiException.class);
+        user.requestPasswordReset(PasswordResetService.hash(user.getId() + ":123456"), Instant.now().minusSeconds(1));
+        assertThatThrownBy(() -> service.reset(user.getEmail(), "123456", "ReplacementPassword123!")).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.reset(user.getEmail(), "999999", "ReplacementPassword123!")).isInstanceOf(ApiException.class);
+        user.requestPasswordReset(PasswordResetService.hash(user.getId() + ":123456"), Instant.now().plusSeconds(900));
+        assertThatThrownBy(() -> service.reset(user.getEmail(), "123456", "ấ".repeat(30))).isInstanceOf(ApiException.class);
         assertThat(user.getPassword()).isEqualTo("old-hash");
     }
 
     @Test
     void deliveryFailurePreservesPreviousLinkAndDoesNotExposeAccount() {
-        doThrow(new GmailService.DeliveryException()).when(mail).sendPasswordReset(anyString(), anyString());
+        doThrow(new GmailService.DeliveryException()).when(mail).sendPasswordResetOtp(anyString(), anyString(), anyString());
         assertThatCode(() -> service.forgot(user.getEmail())).doesNotThrowAnyException();
         assertThat(user.getPasswordResetHash()).isNull();
     }
+    @Test
+    void fiveWrongAttemptsInvalidateOtpAndResendResetsCounter() {
+        service.forgot(user.getEmail());
+        var sent = ArgumentCaptor.forClass(String.class);
+        verify(mail).sendPasswordResetOtp(eq(user.getEmail()), anyString(), sent.capture());
+        String correct = sent.getValue();
+        String wrong = correct.equals("000000") ? "000001" : "000000";
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> service.reset(user.getEmail(), wrong, "ReplacementPassword123!"))
+                    .isInstanceOf(ApiException.class);
+        }
+        assertThat(user.getPasswordResetAttempts()).isEqualTo(5);
+        assertThat(user.getPasswordResetHash()).isNull();
+        assertThatThrownBy(() -> service.reset(user.getEmail(), correct, "ReplacementPassword123!"))
+                .isInstanceOf(ApiException.class);
+        assertThat(user.getPassword()).isEqualTo("old-hash");
+        user.requestPasswordReset(null, Instant.now().plusSeconds(800));
+        service.forgot(user.getEmail());
+        assertThat(user.getPasswordResetAttempts()).isZero();
+        assertThat(user.getPasswordResetHash()).isNotNull();
+    }
+
 }
