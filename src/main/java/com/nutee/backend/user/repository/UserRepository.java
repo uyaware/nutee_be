@@ -12,6 +12,7 @@ import java.util.List;
 
 /** Truy cập tài khoản và khóa dòng khi thay đổi phiên hoặc tiêu thụ mã khôi phục. */
 public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
+    long countByActiveTrue();
     /** Tìm và khóa tài khoản theo hash để mã khôi phục chỉ được dùng một lần. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findByPasswordResetHash(String hash);

@@ -22,6 +22,12 @@ import org.hibernate.annotations.CreationTimestamp;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ProductReviewHistory {
+    public ProductReviewHistory(ProductReview review, User user, int rating, String comment) {
+        this.review = review;
+        this.user = user;
+        this.rating = rating;
+        this.comment = comment;
+    }
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;

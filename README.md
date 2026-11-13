@@ -128,6 +128,20 @@ Các chức năng sau có thể để tắt nếu chỉ cần chạy backend và
 - **Sai mật khẩu PostgreSQL trong Docker:** volume cũ giữ tài khoản và mật khẩu đã khởi tạo; sửa `POSTGRES_PASSWORD` trong `.env` không tự đổi mật khẩu database hiện có. Dùng lại thông tin đúng của database đó.
 - **Lỗi JWT:** kiểm tra hai khóa trong `.env` là Base64 hợp lệ, giải mã được ít nhất 32 byte và khác nhau.
 - **Lỗi Flyway:** kiểm tra bạn đang kết nối đúng database và các migration đã áp dụng khớp với dự án. Không tự xóa dữ liệu hoặc sửa lịch sử migration để xử lý lỗi.
+# Đánh giá sản phẩm và dashboard
+
+- Khách đọc/gửi đánh giá bằng `GET/PUT /api/v1/orders/{orderId}/items/{itemId}/review`.
+  Nội dung ghi: `{ "rating": 4, "comment": "Nhận xét" }`; số sao từ 1–5, nhận xét tối đa 1000 ký tự.
+  Chỉ chủ đơn đã giao được thao tác. Một dòng hàng có một đánh giá; sửa đánh giá ghi thêm lịch sử,
+  gửi lại nội dung giống hệt không tăng số lượt. Điểm trung bình được cập nhật từ bản sửa cuối của mỗi đánh giá.
+- Admin đang hoạt động đọc `GET /api/v1/management/dashboard?days=7` (hoặc `days=30`).
+  Khoảng thời gian bao gồm ngày hiện tại theo `Asia/Ho_Chi_Minh`. Giá trị đơn đã thanh toán gộp theo ngày tạo,
+  loại trừ đơn hủy; số đếm hậu mãi và danh mục không giới hạn theo kỳ.
+- Nhân viên/admin đang hoạt động đọc số đếm vận hành tại `GET /api/v1/management/dashboard/operations`.
+  Endpoint số liệu chi tiết chỉ dành cho admin. Mọi phản hồi dashboard và đánh giá riêng đều dùng `Cache-Control: no-store`.
+- Không thêm hoặc sửa schema cho hai chức năng này. `ReviewDashboardIT` kiểm tra database và gửi đồng thời;
+  chạy bằng `./mvnw verify -Dit.test=ReviewDashboardIT` với Docker đang hoạt động.
+
 # Hậu mãi
 
 - Khách: `GET/POST /api/v1/after-sales`, `GET /api/v1/after-sales/{id}`.

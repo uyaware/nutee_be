@@ -9,6 +9,16 @@ import org.springframework.data.jpa.repository.Query;
 
 /** Repository JPA cho đánh giá qua món hàng đã mua, không đọc mật khẩu người dùng. */
 public interface ProductReviewRepository extends JpaRepository<ProductReview, Integer> {
+    java.util.Optional<ProductReview> findFirstByOrderItem_IdOrderByIdAsc(int itemId);
+
+    /** Chỉ tổng hợp bản sửa mới nhất để sửa đánh giá không làm tăng số lượt hoặc sai điểm. */
+    @Query("""
+            select avg(h.rating) from ProductReviewHistory h
+            where h.review.orderItem.variant.product.id = :productId
+            and not exists (select later.id from ProductReviewHistory later where later.review = h.review
+                and (later.createdAt > h.createdAt or (later.createdAt = h.createdAt and later.id > h.id)))
+            """)
+    Double averageLatestRating(int productId);
     /** Projection tổng số đánh giá đã có lịch sử của mỗi sản phẩm. */
     interface ProductCount {
         /** ID sản phẩm được tổng hợp. */

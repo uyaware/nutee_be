@@ -50,6 +50,8 @@ public class Product {
     private Promotion promotion;
 
     public void assignPromotion(Promotion rule) { promotion = rule; }
+    /** Cập nhật điểm trung bình từ bản sửa mới nhất của mỗi đánh giá dưới khóa sản phẩm. */
+    public void updateAverageRating(BigDecimal rating) { avgRating = rating; }
 
     public static Product create(String name, String description, boolean published, Brand brand, Set<Category> categories) {
         Product product = new Product();

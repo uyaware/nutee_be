@@ -10,6 +10,15 @@ import org.springframework.data.domain.*;
 
 /** Đọc hậu mãi theo trang và khóa yêu cầu khi ghi lịch sử xử lý. */
 public interface AfterSaleRepository extends JpaRepository<AfterSaleRequest, Integer>, JpaSpecificationExecutor<AfterSaleRequest> {
+    /** Trạng thái cuối được lấy từ lịch sử, cùng quy tắc với màn hình danh sách hậu mãi. */
+    @Query("""
+            select count(r) from AfterSaleRequest r
+            where not exists (select h.id from AfterSaleHistory h where h.requestId = r.id)
+            or exists (select h.id from AfterSaleHistory h where h.requestId = r.id
+                and h.status in ('pending', 'reviewing')
+                and h.id = (select max(latest.id) from AfterSaleHistory latest where latest.requestId = r.id))
+            """)
+    long countAwaitingReview();
     @Override
     @EntityGraph(attributePaths = {"orderItem", "orderItem.order", "orderItem.order.user", "orderItem.order.address", "orderItem.variant", "orderItem.variant.product"})
     Page<AfterSaleRequest> findAll(Specification<AfterSaleRequest> filter, Pageable pageable);

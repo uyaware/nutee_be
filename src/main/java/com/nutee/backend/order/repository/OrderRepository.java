@@ -17,6 +17,18 @@ import org.springframework.lang.Nullable;
 
 /** Đếm đơn đang giữ/đã dùng mã; đơn hủy không chiếm lượt, không tạo lịch sử sử dụng giả. */
 public interface OrderRepository extends JpaRepository<Order, Integer>, JpaSpecificationExecutor<Order> {
+    long countByStatus(String status);
+    interface StatusCount { String getStatus(); long getCount(); }
+    /** Tổng hợp tại DB, tránh tải tất cả đơn vào bộ nhớ dashboard. */
+    @Query("select o.status as status, count(o) as count from Order o where o.createdAt >= :from and o.createdAt < :until group by o.status")
+    List<StatusCount> dashboardStatuses(java.time.Instant from, java.time.Instant until);
+    /** Giá trị đơn đã thanh toán theo ngày tạo; không tính đơn hủy. */
+    @Query("select coalesce(sum(o.total), 0) from Order o where o.createdAt >= :from and o.createdAt < :until "
+            + "and o.paymentStatus = 'paid' and coalesce(o.status, '') <> 'cancelled'")
+    java.math.BigDecimal dashboardPaidValue(java.time.Instant from, java.time.Instant until);
+    @EntityGraph(attributePaths = "user")
+    List<Order> findByCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDescIdDesc(
+            java.time.Instant from, java.time.Instant until, Pageable pageable);
     @Override
     @EntityGraph(attributePaths = {"user", "address"})
     Page<Order> findAll(@Nullable Specification<Order> specification, Pageable pageable);

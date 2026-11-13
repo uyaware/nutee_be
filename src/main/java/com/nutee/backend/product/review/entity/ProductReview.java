@@ -22,6 +22,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ProductReview {
+    public ProductReview(OrderItem orderItem) { this.orderItem = orderItem; }
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
