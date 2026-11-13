@@ -26,7 +26,7 @@ cd D:\Web\NUTEE\backend
 java -version
 ```
 
-Script chạy ứng dụng tìm JDK 21 theo thứ tự: tham số `-JdkHome`, biến `JAVA_HOME`, sau đó là `C:\Program Files\Java\jdk-21`. Nếu JDK 21 nằm ở nơi khác, truyền đường dẫn khi chạy ở bước 4.
+Cấu hình `JAVA_HOME` và `PATH` để `java -version` hiển thị JDK 21 trước khi chạy Maven.
 
 ## 3. Chuẩn bị PostgreSQL bằng Docker
 
@@ -49,16 +49,12 @@ Nếu `.env` đã tồn tại, tham số này không ghi đè cấu hình cũ. H
 ## 4. Chạy backend
 
 ```powershell
-.\scripts\run-local.ps1
+.\mvnw.cmd spring-boot:run
 ```
 
-Script đọc `.env`, chọn JDK 21 và khởi động ứng dụng với profile `local`. Nếu cần chỉ định JDK:
+Spring Boot tự đọc `.env` trong thư mục `backend` và dùng profile được cấu hình trong file đó (`local` theo mặc định). Chạy lệnh từ thư mục `backend` để tìm đúng file. Nếu đã cài Maven, cũng có thể dùng `mvn spring-boot:run`.
 
-```powershell
-.\scripts\run-local.ps1 -JdkHome 'C:\Program Files\Java\jdk-21'
-```
-
-Đợi log cho biết ứng dụng đã khởi động. Lần đầu có thể mất vài phút vì Maven tải các thư viện. Flyway tự tạo và kiểm tra schema trong database; lần khởi động đầu nên dùng database mới, rỗng. Với profile `local`, catalog mẫu được thêm tự động. Đặt `CATALOG_SEED_ENABLED=false` trong `.env` nếu không muốn tạo dữ liệu mẫu.
+Đợi log cho biết ứng dụng đã khởi động. Lần đầu có thể mất vài phút vì Maven tải các thư viện. Flyway tự tạo và kiểm tra schema trong database; lần khởi động đầu nên dùng database mới, rỗng. Với profile `local`, catalog, khuyến mãi và voucher mẫu được thêm tự động. Đặt `CATALOG_SEED_ENABLED=false` hoặc `DISCOUNTS_SEED_ENABLED=false` trong `.env` để tắt từng nhóm dữ liệu mẫu.
 
 Nhấn `Ctrl+C` trong cửa sổ PowerShell để dừng backend. Để dừng các container sau khi dùng xong:
 
@@ -66,7 +62,7 @@ Nhấn `Ctrl+C` trong cửa sổ PowerShell để dừng backend. Để dừng c
 docker compose stop
 ```
 
-Lệnh này giữ lại dữ liệu PostgreSQL trong Docker volume. Lần sau, mở Docker Desktop rồi chạy lại `init-local.ps1` và `run-local.ps1`.
+Lệnh này giữ lại dữ liệu PostgreSQL trong Docker volume. Lần sau, mở Docker Desktop và bảo đảm PostgreSQL đã chạy, sau đó chạy lại lệnh Maven ở trên. Nếu đã dừng container, khởi động lại bằng `docker compose up -d`.
 
 ## 5. Kiểm tra ứng dụng
 
@@ -110,9 +106,9 @@ Nếu PostgreSQL đã chạy trực tiếp trên Windows, bạn không cần Doc
     [Convert]::ToBase64String($bytes)
     ```
 
-5. Chạy `.\scripts\run-local.ps1` và mở Swagger theo bước 5 ở trên.
+5. Chạy `.\mvnw.cmd spring-boot:run` và mở Swagger theo bước 5 ở trên.
 
-Các dòng trong `.env` phải theo dạng `TEN_BIEN=gia_tri`, không đặt giá trị trong dấu nháy. Script chỉ đọc `.env` khi khởi động; sau khi chỉnh sửa, dừng và chạy lại backend.
+Các dòng trong `.env` phải theo dạng `TEN_BIEN=gia_tri`, không đặt giá trị trong dấu nháy. Spring Boot đọc file theo định dạng Java properties khi khởi động; sau khi chỉnh sửa, dừng và chạy lại backend.
 
 ## Cấu hình chức năng tùy chọn
 
@@ -125,7 +121,7 @@ Các chức năng sau có thể để tắt nếu chỉ cần chạy backend và
 
 ## Xử lý lỗi khi chạy
 
-- **Không tìm thấy JDK 21:** kiểm tra thư mục JDK và chạy lại với `-JdkHome` như bước 4. Chỉ cài JRE là chưa đủ.
+- **Không tìm thấy JDK 21:** kiểm tra `JAVA_HOME`, `PATH` và `java -version`. Chỉ cài JRE là chưa đủ.
 - **Docker chưa sẵn sàng:** mở Docker Desktop, chờ engine chạy và thử `docker info` trước khi chạy lại `init-local.ps1`.
 - **Cổng 8080 đang được sử dụng:** chạy `netstat -ano | findstr :8080` để xem PID, sau đó dừng ứng dụng đang chiếm cổng hoặc đổi `SERVER_PORT` trong `.env` và khởi động lại.
 - **Không kết nối được PostgreSQL:** kiểm tra PostgreSQL đã chạy, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` và cổng trong `.env` khớp với database thực tế. Với Docker, xem trạng thái bằng `docker compose ps`.

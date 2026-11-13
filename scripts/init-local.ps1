@@ -104,4 +104,4 @@ try {
     [Environment]::SetEnvironmentVariable('PGPASSWORD', $previousPgPassword, 'Process')
 }
 Write-Host "Database is ready: localhost:$($env:POSTGRES_PORT)/$($env:POSTGRES_DB)"
-Write-Host 'Start .\scripts\run-local.ps1 to apply Flyway migrations and run the API.'
+Write-Host 'Run .\mvnw.cmd spring-boot:run from backend to start the API.'

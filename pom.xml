@@ -121,6 +121,8 @@
                 <targetPath>db/seed</targetPath>
                 <includes>
                     <include>seed-catalog.sql</include>
+                    <include>seed-discounts.sql</include>
+                    <include>seed-discounts.sql</include>
                 </includes>
             </resource>
         </resources>

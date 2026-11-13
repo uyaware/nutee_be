@@ -8,12 +8,14 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.stereotype.Component;
 
 /** Tạo catalog mẫu sau Flyway khi chạy local; SQL giữ nguyên dữ liệu mẫu đã được chỉnh sửa. */
 @Component
+@Order(1)
 @Profile("local")
 @ConditionalOnProperty(name = "app.seed.catalog-enabled", havingValue = "true")
 @RequiredArgsConstructor
