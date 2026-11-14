@@ -91,6 +91,19 @@ class PasswordResetServiceTest {
     }
 
     @Test
+    void resetRejectsTheCurrentPassword() {
+        String current = "12345678";
+        user.resetPassword(passwords.encode(current));
+        user.requestPasswordReset(PasswordResetService.hash(user.getId() + ":123456"), Instant.now().plusSeconds(900));
+        assertThatThrownBy(() -> service.reset(user.getEmail(), "123456", current))
+                .isInstanceOf(ApiException.class);
+        assertThat(passwords.matches(current, user.getPassword())).isTrue();
+        service.reset(user.getEmail(), "123456", "newpassword");
+        assertThat(passwords.matches(current, user.getPassword())).isFalse();
+        assertThat(passwords.matches("newpassword", user.getPassword())).isTrue();
+    }
+
+    @Test
     void deliveryFailurePreservesPreviousLinkAndDoesNotExposeAccount() {
         doThrow(new GmailService.DeliveryException()).when(mail).sendPasswordResetOtp(anyString(), anyString(), anyString());
         assertThatCode(() -> service.forgot(user.getEmail())).doesNotThrowAnyException();

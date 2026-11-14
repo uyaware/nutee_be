@@ -97,6 +97,9 @@ public class PasswordResetService {
             user.rejectPasswordResetOtp();
             throw invalidToken();
         }
+        if (passwords.matches(password, user.getPassword())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "New password must differ from the current password.");
+        }
         user.resetPassword(passwords.encode(password));
     }
 

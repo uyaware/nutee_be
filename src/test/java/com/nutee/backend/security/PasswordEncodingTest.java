@@ -30,6 +30,7 @@ class PasswordEncodingTest {
                 var request = new RegisterRequest(null, "test@example.com", "a".repeat(length), "Test");
                 assertThat(validator.validate(request).isEmpty()).isEqualTo(length >= 8 && length <= 100);
             }
+            assertThat(validator.validate(new RegisterRequest(null, "test@example.com", "matkhauấ", "Test"))).isNotEmpty();
         }
     }
 }

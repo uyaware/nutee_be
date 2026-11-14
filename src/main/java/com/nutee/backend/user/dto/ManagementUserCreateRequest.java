@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record ManagementUserCreateRequest(@NotBlank @Email @Size(max = 255) String email,
-        @NotBlank @Size(min = 8, max = 100) String password, @NotBlank @Size(max = 100) String name,
+        @NotBlank @Size(min = 8, max = 100) @Pattern(regexp = "[\\x20-\\x7E]*", message = "Password must contain only ASCII characters.") String password, @NotBlank @Size(max = 100) String name,
         @NotBlank @Pattern(regexp = "customer|staff|admin") String role) {
     @Override public String toString() { return "ManagementUserCreateRequest[REDACTED]"; }
 }
