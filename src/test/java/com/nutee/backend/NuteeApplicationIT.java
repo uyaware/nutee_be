@@ -85,6 +85,12 @@ class NuteeApplicationIT {
 
     @Test
     @Transactional
+    void eventLogsEnforceSharedPayloadContract() throws Exception {
+        jdbc.execute(new ClassPathResource("db/event-contract.sql").getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @Transactional
     void paymentUsesTransactionLogsAndDoesNotDuplicateDeliveryOrInventoryFields() {
         assertThat(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' "
                 + "AND table_name IN ('user_addresses', 'orders') AND column_name IN ('recipient', 'phone', 'address_line', 'inventory_released')", String.class)).isEmpty();

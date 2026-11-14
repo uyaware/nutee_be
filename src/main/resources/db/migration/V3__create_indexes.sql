@@ -36,3 +36,9 @@ CREATE INDEX idx_products_default_variant_id ON products (default_variant_id)
 CREATE UNIQUE INDEX uk_orders_checkout_key ON orders (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE UNIQUE INDEX uk_vouchers_code_ci ON vouchers (upper(btrim(code)));
 CREATE UNIQUE INDEX uk_promotions_code_ci ON promotions (upper(btrim(code)));
+
+-- Event timelines and incremental ingestion reads; event_id is indexed by its PK.
+CREATE INDEX idx_event_logs_distinct_timestamp ON event_logs (distinct_id, occurred_at);
+CREATE INDEX idx_event_logs_session_timestamp ON event_logs (session_id, occurred_at)
+    WHERE session_id IS NOT NULL;
+CREATE INDEX idx_event_logs_received ON event_logs (received_at, event_id);

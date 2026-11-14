@@ -265,13 +265,23 @@ CREATE TABLE review_histories (
 );
 
 CREATE TABLE event_logs (
-    id UUID,
-    user_id UUID,
-    session_id UUID,
-    product_id INT,
-    event_type VARCHAR(100),
-    rating INT,
-    quantity INT,
+    event_id UUID,
+    distinct_id VARCHAR(100),
+    event_name VARCHAR(100),
+    product_id TEXT,
+    query VARCHAR(200),
+    order_id VARCHAR(100),
+    source VARCHAR(20) DEFAULT 'website',
+    synthetic BOOLEAN DEFAULT true,
+    environment VARCHAR(20) DEFAULT 'dev',
+    session_id VARCHAR(150),
+    order_item_id VARCHAR(150),
+    consent BOOLEAN DEFAULT false,
+    request_id VARCHAR(150),
+    page VARCHAR(20),
+    list_id VARCHAR(150),
+    position INT,
+    bot BOOLEAN DEFAULT false,
     occurred_at TIMESTAMPTZ,
-    received_at TIMESTAMPTZ
+    received_at TIMESTAMPTZ DEFAULT now()
 );

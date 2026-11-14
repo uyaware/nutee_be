@@ -24,7 +24,29 @@ ALTER TABLE transaction_logs ADD CONSTRAINT pk_transaction_logs PRIMARY KEY (id)
 ALTER TABLE payment_events ADD CONSTRAINT pk_payment_events PRIMARY KEY (id);
 ALTER TABLE product_variants ADD CONSTRAINT pk_product_variants PRIMARY KEY (id);
 ALTER TABLE review_histories ADD CONSTRAINT pk_review_histories PRIMARY KEY (id);
-ALTER TABLE event_logs ADD CONSTRAINT pk_event_logs PRIMARY KEY (id);
+ALTER TABLE event_logs ADD CONSTRAINT pk_event_logs PRIMARY KEY (event_id);
+
+-- Analytics identifiers may be anonymous or supplied by the simulator.
+-- Keep them independent of transactional foreign keys.
+ALTER TABLE event_logs ADD CONSTRAINT ck_event_logs_distinct_id CHECK (char_length(distinct_id) >= 1);
+ALTER TABLE event_logs ADD CONSTRAINT ck_event_logs_event_name CHECK (event_name IN (
+    'product_impression', 'product_click', 'product_view', 'search',
+    'add_to_wishlist', 'add_to_cart', 'purchase', 'remove_from_cart'
+));
+ALTER TABLE event_logs ADD CONSTRAINT ck_event_logs_source CHECK (source IN ('website', 'simulator'));
+ALTER TABLE event_logs ADD CONSTRAINT ck_event_logs_environment CHECK (environment IN ('dev', 'staging', 'production'));
+ALTER TABLE event_logs ADD CONSTRAINT ck_event_logs_page CHECK (page IN ('home', 'catalog', 'search', 'product_detail', 'cart'));
+ALTER TABLE event_logs ADD CONSTRAINT ck_event_logs_position CHECK (position >= 1);
+ALTER TABLE event_logs
+    ALTER COLUMN distinct_id SET NOT NULL,
+    ALTER COLUMN event_name SET NOT NULL,
+    ALTER COLUMN source SET NOT NULL,
+    ALTER COLUMN synthetic SET NOT NULL,
+    ALTER COLUMN environment SET NOT NULL,
+    ALTER COLUMN consent SET NOT NULL,
+    ALTER COLUMN bot SET NOT NULL,
+    ALTER COLUMN occurred_at SET NOT NULL,
+    ALTER COLUMN received_at SET NOT NULL;
 
 ALTER TABLE auth_providers ADD CONSTRAINT uk_auth_providers_provider_identity UNIQUE (provider, provider_user_id);
 ALTER TABLE auth_providers ADD CONSTRAINT uk_auth_providers_user_provider UNIQUE (user_id, provider);
