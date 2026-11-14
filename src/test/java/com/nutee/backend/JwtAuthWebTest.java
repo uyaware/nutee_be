@@ -150,10 +150,31 @@ class JwtAuthWebTest {
     }
 
     @Test
+    void invalidLoginReturnsCredentialsErrorInsteadOfRequiringAuthentication() throws Exception {
+        given(auth.login(any())).willThrow(new BadCredentialsException("private-error-detail"));
+        mvc.perform(postWithCsrf("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"identifier\":\"staff@example.com\",\"password\":\"wrong-password\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.detail").value("Email/tên đăng nhập hoặc mật khẩu không đúng."));
+    }
+
+    @Test
+    void disabledAccountReturnsSpecificError() throws Exception {
+        given(auth.login(any())).willThrow(new org.springframework.security.authentication.DisabledException("private-detail"));
+        mvc.perform(postWithCsrf("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"identifier\":\"staff@example.com\",\"password\":\"correct-password\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DISABLED"))
+                .andExpect(jsonPath("$.detail").value("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên."));
+    }
+
+    @Test
     void invalidRefreshClearsCookiesAndBodyCannotReplaceMissingCookie() throws Exception {
         mvc.perform(postWithCsrf("/api/v1/auth/refresh").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"refreshToken\":\"refresh-jwt\"}"))
-                .andExpect(status().isUnauthorized()).andExpect(cookie().maxAge("accessToken", 0))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("SESSION_EXPIRED"))
+                .andExpect(cookie().maxAge("accessToken", 0))
                 .andExpect(cookie().maxAge("refreshToken", 0));
     }
 }

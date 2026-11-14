@@ -10,9 +10,9 @@ import org.springframework.util.MultiValueMap;
 
 /** Bộ lọc catalog; page bắt đầu từ 0 và tham số được kiểm tra trước khi query. */
 public record ProductFilter(String q, Integer category, List<Integer> brands, Integer minPrice,
-        Integer maxPrice, boolean inStock, String sort, int page, int size,
+        Integer maxPrice, boolean inStock, boolean discounted, String sort, int page, int size,
         Map<String, List<String>> specifications) {
-    private static final Set<String> SUPPORTED_SORTS = Set.of("featured", "price-asc", "price-desc", "name", "newest");
+    private static final Set<String> SUPPORTED_SORTS = Set.of("featured", "best-selling", "price-asc", "price-desc", "name", "newest");
 
     /** Đọc query, giới hạn phân trang và tránh bộ lọc quá lớn. */
     public static ProductFilter from(MultiValueMap<String, String> params) {
@@ -38,6 +38,10 @@ public record ProductFilter(String q, Integer category, List<Integer> brands, In
         if (inStock != null && !Set.of("true", "false").contains(inStock)) {
             throw invalid("inStock must be true or false.");
         }
+        String discounted = params.getFirst("discounted");
+        if (discounted != null && !Set.of("true", "false").contains(discounted)) {
+            throw invalid("discounted must be true or false.");
+        }
         Map<String, List<String>> specs = new LinkedHashMap<>();
         params.forEach((key, values) -> {
             if (key.startsWith("spec.")) {
@@ -54,7 +58,7 @@ public record ProductFilter(String q, Integer category, List<Integer> brands, In
             throw invalid("At most 10 specification filters are allowed.");
         }
         return new ProductFilter(q, number(params.getFirst("category"), "category", null, 1, Integer.MAX_VALUE),
-                brands, min, max, "true".equals(inStock), sort,
+                brands, min, max, "true".equals(inStock), "true".equals(discounted), sort,
                 number(params.getFirst("page"), "page", 0, 0, 1_000_000),
                 number(params.getFirst("size"), "size", 12, 1, 100), specs);
     }

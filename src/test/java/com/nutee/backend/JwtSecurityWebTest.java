@@ -52,7 +52,7 @@ class JwtSecurityWebTest {
         mvc.perform(get("/api/v1/_test/jwt").cookie(new Cookie("accessToken", "invalid-token")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate", "Bearer"))
-                .andExpect(jsonPath("$.detail").value("Authentication is required."));
+                .andExpect(jsonPath("$.detail").value("Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại."));
     }
 
     @RestController

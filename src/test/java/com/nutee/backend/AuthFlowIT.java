@@ -155,7 +155,7 @@ class AuthFlowIT {
             mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", "wrong-password"))))
                     .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.detail").value("Authentication is required."));
+                    .andExpect(jsonPath("$.detail").value("Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại."));
         }
     }
 

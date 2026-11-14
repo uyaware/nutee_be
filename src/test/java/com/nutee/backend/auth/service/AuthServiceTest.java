@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.nutee.backend.auth.repository.AuthProviderRepository;
+import com.nutee.backend.auth.dto.LoginRequest;
 import com.nutee.backend.security.HmacTokenService;
 import com.nutee.backend.security.JwtProperties;
 import com.nutee.backend.user.entity.User;
@@ -21,11 +22,12 @@ import org.springframework.security.authentication.BadCredentialsException;
 
 class AuthServiceTest {
     private final UserRepository users = mock(UserRepository.class);
+    private final PasswordEncoder passwords = mock(PasswordEncoder.class);
     private final HmacTokenService tokens = new HmacTokenService(new JwtProperties(
             "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
             "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=", Duration.ofMinutes(15), Duration.ofDays(7)));
     private final AuthService auth = new AuthService(users, mock(AuthProviderRepository.class),
-            mock(PasswordEncoder.class), tokens);
+            passwords, tokens);
     private User user;
     private String original;
 
@@ -35,6 +37,36 @@ class AuthServiceTest {
         original = tokens.issue(user).refreshToken();
         user.replaceRefreshToken(original);
         given(users.findLockedById(user.getId())).willReturn(Optional.of(user));
+    }
+
+    @Test
+    void activeStaffCanLoginWithCorrectCredentials() {
+        user.updateAccess("STAFF", true);
+        given(users.findByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
+        given(passwords.matches("correct-password", "hash")).willReturn(true);
+        var response = auth.login(new LoginRequest(user.getEmail(), "correct-password"));
+        assertThat(response.user().role()).isEqualTo("STAFF");
+        assertThat(tokens.decodeAccess(response.accessToken()).getClaimAsString("role")).isEqualTo("STAFF");
+    }
+
+    @Test
+    void wrongPasswordAndUnknownAccountBothRejectCredentials() {
+        given(users.findByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
+        assertThatThrownBy(() -> auth.login(new LoginRequest(user.getEmail(), "wrong-password")))
+                .isInstanceOf(BadCredentialsException.class);
+        assertThatThrownBy(() -> auth.login(new LoginRequest("missing@example.com", "wrong-password")))
+                .isInstanceOf(BadCredentialsException.class);
+    }
+
+    @Test
+    void disabledStaffIsReportedOnlyAfterPasswordVerification() {
+        user.updateAccess("STAFF", false);
+        given(users.findByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
+        given(passwords.matches("correct-password", "hash")).willReturn(true);
+        assertThatThrownBy(() -> auth.login(new LoginRequest(user.getEmail(), "correct-password")))
+                .isInstanceOf(org.springframework.security.authentication.DisabledException.class);
+        assertThatThrownBy(() -> auth.login(new LoginRequest(user.getEmail(), "wrong-password")))
+                .isInstanceOf(BadCredentialsException.class);
     }
 
     @Test

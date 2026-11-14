@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -66,8 +67,11 @@ public class AuthService {
         String encoded = user != null && user.getPassword() != null ? user.getPassword() : dummyPassword;
         boolean correct = request.password().getBytes(StandardCharsets.UTF_8).length <= 72
                 && passwords.matches(request.password(), encoded);
-        if (!correct || user == null || user.getPassword() == null || !user.isActive()) {
+        if (!correct || user == null || user.getPassword() == null) {
             throw new BadCredentialsException("Invalid credentials.");
+        }
+        if (!user.isActive()) {
+            throw new DisabledException("Account is disabled.");
         }
         return startSession(user);
     }
@@ -153,7 +157,7 @@ public class AuthService {
         User locked = users.findLockedById(user.getId())
                 .orElseThrow(() -> new BadCredentialsException("Invalid account."));
         if (!locked.isActive()) {
-            throw new BadCredentialsException("Invalid account.");
+            throw new DisabledException("Account is disabled.");
         }
         return storeTokens(locked, tokens.issue(locked));
     }

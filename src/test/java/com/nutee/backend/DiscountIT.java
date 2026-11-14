@@ -12,8 +12,6 @@ import com.nutee.backend.user.entity.User;
 import com.nutee.backend.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.Cookie;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -158,18 +156,6 @@ class DiscountIT {
         mvc.perform(delete("/api/v1/management/vouchers/" + id).cookie(admin).with(csrf())).andExpect(status().isConflict());
         jdbc.update("INSERT INTO orders (order_code, user_id, voucher_id, status) VALUES ('DISC000002', ?, ?, 'paid'), ('DISC000003', ?, ?, 'paid')", OWNER, id, OWNER, id);
         quote("QUOTA10", 409);
-    }
-
-    @Test void discountSeedIsRepeatableAndPreservesEditedRules() throws Exception {
-        jdbc.update("UPDATE product_variants SET sku = 'NT260001V01' WHERE id = 11");
-        String seed = Files.readString(Path.of("scripts/seed-discounts.sql")).replaceFirst("(?m)^BEGIN;", "").replaceFirst("(?m)^COMMIT;", "");
-        jdbc.execute(seed);
-        jdbc.update("UPDATE vouchers SET value = 77777 WHERE code = 'NT26_100K'");
-        jdbc.execute(seed);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM promotions WHERE code LIKE 'NT26_%'", Integer.class)).isEqualTo(4);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM vouchers WHERE code LIKE 'NT26_%'", Integer.class)).isEqualTo(7);
-        assertThat(jdbc.queryForObject("SELECT value FROM vouchers WHERE code = 'NT26_100K'", Integer.class)).isEqualTo(77777);
-        assertThat(jdbc.queryForObject("SELECT promotion_id::text FROM products WHERE id = 1", String.class)).isEqualTo("26000000-0000-0000-0000-000000000001");
     }
 
     private UUID create(String kind, Map<String, Object> body) throws Exception {

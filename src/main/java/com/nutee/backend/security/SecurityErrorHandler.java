@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.csrf.CsrfException;
@@ -28,7 +29,9 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
     public void commence(HttpServletRequest request, HttpServletResponse response,
             AuthenticationException exception) throws IOException {
         response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-        write(request, response, HttpStatus.UNAUTHORIZED, "Authentication is required.");
+        write(request, response, HttpStatus.UNAUTHORIZED, exception instanceof BadCredentialsException
+                ? "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại."
+                : "Vui lòng đăng nhập để tiếp tục.");
     }
 
     /** Trả lỗi 403 và phân biệt CSRF hết hạn để frontend có thể lấy lại CSRF. */
@@ -38,12 +41,12 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
         if (exception instanceof CsrfException) {
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-            var problem = ApiProblems.create(HttpStatus.FORBIDDEN, "CSRF token is missing or invalid.", request.getRequestURI());
+            var problem = ApiProblems.create(HttpStatus.FORBIDDEN, "Phiên bảo mật đã hết hạn. Vui lòng tải lại trang và thử lại.", request.getRequestURI());
             problem.setProperty("code", "CSRF_INVALID");
             objectMapper.writeValue(response.getOutputStream(), problem);
             return;
         }
-        write(request, response, HttpStatus.FORBIDDEN, "You do not have permission to access this resource.");
+        write(request, response, HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này.");
     }
 
     private void write(HttpServletRequest request, HttpServletResponse response,

@@ -12,8 +12,7 @@ springdoc:
 
 app:
   seed:
-    catalog-enabled: ${CATALOG_SEED_ENABLED:true}
-    discounts-enabled: ${DISCOUNTS_SEED_ENABLED:true}
+    enabled: ${LOCAL_SEED_ENABLED:true}
   docs-enabled: true
   security:
     cookies:

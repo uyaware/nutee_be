@@ -16,6 +16,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -39,7 +40,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Object> handleConflict(DataIntegrityViolationException exception, WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
-                "The request conflicts with an existing record.");
+                "Thông tin bị trùng hoặc xung đột với dữ liệu hiện có.");
         return handleExceptionInternal(exception, problem, new HttpHeaders(), HttpStatus.CONFLICT, request);
     }
 
@@ -75,7 +76,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     protected ResponseEntity<Object> handleHttpMessageNotReadable(
             HttpMessageNotReadableException exception, HttpHeaders headers,
             HttpStatusCode status, WebRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, "Malformed request body.");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, "Dữ liệu gửi lên không đúng định dạng.");
         return handleExceptionInternal(exception, problem, headers, status, request);
     }
 
@@ -100,7 +101,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Object> handleAccessDenied(AccessDeniedException exception, WebRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
-                "You do not have permission to access this resource.");
+                "Bạn không có quyền thực hiện thao tác này.");
         return handleExceptionInternal(exception, problem, new HttpHeaders(), HttpStatus.FORBIDDEN, request);
     }
 
@@ -108,8 +109,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<Object> handleAuthentication(AuthenticationException exception, WebRequest request) {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED,
-                "Authentication is required.");
+        var servletRequest = ((ServletWebRequest) request).getRequest();
+        String path = servletRequest.getRequestURI().substring(servletRequest.getContextPath().length());
+        String message = "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.";
+        String code = "SESSION_EXPIRED";
+        if (exception instanceof DisabledException) {
+            message = "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.";
+            code = "ACCOUNT_DISABLED";
+        } else if (path.equals("/api/v1/auth/login")) {
+            message = "Email/tên đăng nhập hoặc mật khẩu không đúng.";
+            code = "INVALID_CREDENTIALS";
+        } else if (path.equals("/api/v1/auth/google") || path.startsWith("/api/v1/auth/social/")
+                || path.startsWith("/api/v1/auth/google/")) {
+            message = "Không thể xác minh đăng nhập Google. Vui lòng thử lại.";
+            code = "SOCIAL_AUTH_INVALID";
+        }
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, message);
+        problem.setProperty("code", code);
         return handleExceptionInternal(exception, problem, headers, HttpStatus.UNAUTHORIZED, request);
     }
 
@@ -120,7 +136,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatusCode status, WebRequest request) {
         ProblemDetail problem;
         if (status.is5xxServerError() && !(exception instanceof ApiException)) {
-            problem = ProblemDetail.forStatusAndDetail(status, "An unexpected error occurred.");
+            problem = ProblemDetail.forStatusAndDetail(status, "Hệ thống đang gặp sự cố. Vui lòng thử lại sau.");
         } else if (body instanceof ProblemDetail detail) {
             problem = detail;
         } else {
@@ -134,7 +150,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private ResponseEntity<Object> validationResponse(
             Exception exception, List<ValidationError> errors, HttpHeaders headers,
             HttpStatusCode status, WebRequest request) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, "Request validation failed.");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, "Thông tin gửi lên không hợp lệ. Vui lòng kiểm tra lại.");
         problem.setProperty("errors", errors);
         return handleExceptionInternal(exception, problem, headers, status, request);
     }

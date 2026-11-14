@@ -41,8 +41,8 @@ public class ProductController {
     }
 
     @GetMapping("/facets")
-    public ProductFacetsResponse facets() {
-        return service.facets();
+    public ProductFacetsResponse facets(@RequestParam(required = false) Integer category) {
+        return service.facets(category);
     }
 
     @GetMapping("/{id}/reviews")

@@ -5,7 +5,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import com.nutee.backend.catalog.config.CatalogSeedRunner;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
 import jakarta.servlet.http.Cookie;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -70,6 +72,48 @@ class CatalogIT {
         mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", "invalid")))
                 .andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/products")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void sortsBySalesAndFiltersOnlyCurrentlyDiscountedPrices() throws Exception {
+        jdbc.update("UPDATE products SET sold_count = CASE id WHEN 1 THEN 2 WHEN 2 THEN 12 ELSE 0 END");
+        jdbc.update("""
+                INSERT INTO promotions (id, code, applied_for, type, value, is_active, start_date, end_date)
+                VALUES ('26000000-0000-0000-0000-000000000099', 'TESTSALE', 'product', 'percent', 10,
+                    true, now() - interval '1 day', now() + interval '1 day')
+                """);
+        jdbc.update("UPDATE products SET promotion_id='26000000-0000-0000-0000-000000000099' WHERE id=1");
+        entityManager.clear();
+        mvc.perform(get("/api/v1/products").param("sort", "best-selling"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(2));
+        mvc.perform(get("/api/v1/products").param("discounted", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(1));
+        jdbc.update("UPDATE promotions SET end_date=now()-interval '1 hour' WHERE code='TESTSALE'");
+        entityManager.clear();
+        mvc.perform(get("/api/v1/products").param("discounted", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(0));
+        mvc.perform(get("/api/v1/products").param("discounted", "invalid"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void facetsFollowSelectedCategoryAndItsDescendants() throws Exception {
+        mvc.perform(get("/api/v1/products/facets").param("category", "101"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brands.length()").value(1))
+                .andExpect(jsonPath("$.brands[0].name").value("ExampleTech"))
+                .andExpect(jsonPath("$.specifications[?(@.name == 'connection')]").isEmpty())
+                .andExpect(jsonPath("$.specifications[?(@.name == 'ram')]").isNotEmpty());
+        mvc.perform(get("/api/v1/products/facets").param("category", "103"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.brands.length()").value(1))
+                .andExpect(jsonPath("$.brands[0].name").value("KeyWorks"))
+                .andExpect(jsonPath("$.specifications[?(@.name == 'ram')]").isEmpty());
+        mvc.perform(get("/api/v1/products/facets").param("category", "100"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.brands.length()").value(2));
+        mvc.perform(get("/api/v1/products/facets").param("category", "99999"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.brands.length()").value(0));
     }
 
     @Test
@@ -215,7 +259,7 @@ class CatalogIT {
     @Test
     @Sql(statements = "SELECT 1")
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void developmentSeedUsesTheNewSchemaAndPreservesExistingCatalogEdits() throws Exception {
+    void developmentSeedIncludesCatalogAndBusinessData() throws Exception {
         Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("catalog_seed").defaultSchema("catalog_seed").cleanDisabled(true).load().migrate();
@@ -224,35 +268,22 @@ class CatalogIT {
             connection.setSchema("catalog_seed");
             var dataSource = new SingleConnectionDataSource(connection, true);
             var seeded = new JdbcTemplate(dataSource);
-            var seed = new CatalogSeedRunner(dataSource);
-            seed.run(null);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(101);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(301);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM brands", Integer.class)).isEqualTo(12);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM categories", Integer.class)).isEqualTo(11);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM products WHERE default_variant_id IS NULL",
-                    Integer.class)).isZero();
-            assertThat(seeded.queryForObject("""
-                    SELECT count(*) FROM product_variants variant
-                    WHERE NOT EXISTS (SELECT 1 FROM variant_specifications specification
-                        WHERE specification.variant_id = variant.id)
-                    """, Integer.class)).isZero();
-            for (String table : new String[] {"users", "orders", "reviews", "aftersale_requests"}) {
-                assertThat(seeded.queryForObject("SELECT count(*) FROM " + table, Integer.class)).isZero();
+            var seed = new ResourceDatabasePopulator();
+            seed.setSqlScriptEncoding("UTF-8");
+            seed.setSeparator(ScriptUtils.EOF_STATEMENT_SEPARATOR);
+            seed.addScript(new ClassPathResource("db/seed/seed-local.sql"));
+            seed.execute(dataSource);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(50);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(150);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM categories WHERE parent IS NULL", Integer.class)).isEqualTo(5);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM categories WHERE name = '?? ?i?n t?'", Integer.class)).isZero();
+            for (String table : new String[] {"users", "orders", "reviews", "aftersale_requests", "promotions", "vouchers"}) {
+                assertThat(seeded.queryForObject("SELECT count(*) FROM " + table, Integer.class)).isPositive();
             }
-            assertThat(seeded.queryForObject("SELECT price FROM product_variants WHERE sku = 'NT26PAYOS2000'", Integer.class)).isEqualTo(2000);
-            assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT26PAYOS2000'", Integer.class)).isEqualTo(100);
-            seeded.update("UPDATE product_variants SET quantity = 93 WHERE sku = 'NT26PAYOS2000'");
-            seeded.update("UPDATE product_variants SET price = 12345678, quantity = 7 WHERE sku = 'NT260001V01'");
-            seed.run(null);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM products", Integer.class)).isEqualTo(101);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_variants", Integer.class)).isEqualTo(301);
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images", Integer.class)).isEqualTo(201);
-            assertThat(seeded.queryForObject("SELECT price FROM product_variants WHERE sku = 'NT260001V01'",
-                    Integer.class)).isEqualTo(12345678);
-            assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT26PAYOS2000'", Integer.class)).isEqualTo(93);
-            assertThat(seeded.queryForObject("SELECT quantity FROM product_variants WHERE sku = 'NT260001V01'",
-                    Integer.class)).isEqualTo(7);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM products WHERE default_variant_id IS NULL", Integer.class)).isZero();
+            assertThat(seeded.queryForObject("SELECT count(*) FROM orders WHERE user_address_id IS NULL", Integer.class)).isZero();
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images WHERE image_url LIKE 'https://images.unsplash.com/%'", Integer.class)).isEqualTo(50);
+
         }
     }
 }

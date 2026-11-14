@@ -82,7 +82,7 @@ class InfrastructureWebTest {
         mvc.perform(post("/api/v1/_test/validate").with(csrf()).with(user("tester"))
                         .contentType(MediaType.APPLICATION_JSON).content("{invalid"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Malformed request body."));
+                .andExpect(jsonPath("$.detail").value("Dữ liệu gửi lên không đúng định dạng."));
     }
 
     @Test
@@ -103,7 +103,7 @@ class InfrastructureWebTest {
     void unexpectedFailuresDoNotExposeInternalDetails() throws Exception {
         mvc.perform(get("/api/v1/_test/failure").with(user("tester")))
                 .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.detail").value("An unexpected error occurred."))
+                .andExpect(jsonPath("$.detail").value("Hệ thống đang gặp sự cố. Vui lòng thử lại sau."))
                 .andExpect(content().string(not(containsString("internal-database-detail"))));
     }
 

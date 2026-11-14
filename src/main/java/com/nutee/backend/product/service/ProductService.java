@@ -2,6 +2,7 @@ package com.nutee.backend.product.service;
 
 import com.nutee.backend.brand.dto.BrandResponse;
 import com.nutee.backend.brand.service.BrandService;
+import com.nutee.backend.brand.repository.BrandRepository;
 import com.nutee.backend.category.dto.CategoryResponse;
 import com.nutee.backend.category.entity.Category;
 import com.nutee.backend.category.service.CategoryService;
@@ -47,6 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductService {
     private final ProductRepository products;
     private final BrandService brands;
+    private final BrandRepository brandRepository;
     private final CategoryService categories;
     private final ProductVariantRepository variants;
     private final ProductImageRepository images;
@@ -78,11 +80,16 @@ public class ProductService {
         return loadVariants(List.of(id)).getOrDefault(id, List.of());
     }
 
-    public ProductFacetsResponse facets() {
+    public ProductFacetsResponse facets(Integer category) {
+        if (category != null) validateId(category);
+        var categoryIds = category == null ? Set.<Integer>of() : categories.descendantIds(category);
         Map<String, List<String>> values = new LinkedHashMap<>();
-        specifications.findFacetValues().forEach(value ->
+        var facetValues = category == null ? specifications.findFacetValues()
+                : specifications.findFacetValuesByCategoryIds(categoryIds);
+        facetValues.forEach(value ->
                 values.computeIfAbsent(value.name(), key -> new ArrayList<>()).add(value.value()));
-        return new ProductFacetsResponse(brands.list(), categories.list(), values.entrySet().stream()
+        var facetBrands = category == null ? brands.list() : brandRepository.findFacetBrandsByCategoryIds(categoryIds);
+        return new ProductFacetsResponse(facetBrands, categories.list(), values.entrySet().stream()
                 .map(entry -> new SpecificationFacetResponse(entry.getKey(), entry.getValue())).toList());
     }
 

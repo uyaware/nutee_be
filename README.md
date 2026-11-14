@@ -54,7 +54,9 @@ Nếu `.env` đã tồn tại, tham số này không ghi đè cấu hình cũ. H
 
 Spring Boot tự đọc `.env` trong thư mục `backend` và dùng profile được cấu hình trong file đó (`local` theo mặc định). Chạy lệnh từ thư mục `backend` để tìm đúng file. Nếu đã cài Maven, cũng có thể dùng `mvn spring-boot:run`.
 
-Đợi log cho biết ứng dụng đã khởi động. Lần đầu có thể mất vài phút vì Maven tải các thư viện. Flyway tự tạo và kiểm tra schema trong database; lần khởi động đầu nên dùng database mới, rỗng. Với profile `local`, catalog, khuyến mãi và voucher mẫu được thêm tự động. Đặt `CATALOG_SEED_ENABLED=false` hoặc `DISCOUNTS_SEED_ENABLED=false` trong `.env` để tắt từng nhóm dữ liệu mẫu.
+Với profile `local`, database rỗng được tự động seed một lần khi backend khởi động, gồm catalog, tài khoản, đơn hàng, đánh giá và hậu mãi mẫu. Tài khoản backoffice là `admin@nutee.local` và `staff@nutee.local`; Java sinh mật khẩu còn thiếu vào `LOCAL_ADMIN_PASSWORD` và `LOCAL_STAFF_PASSWORD` trong `.env`. Đổi giá trị trong `.env` không đặt lại mật khẩu tài khoản đã tạo. Khách hàng mẫu chỉ dùng cho dữ liệu đơn hàng, không có mật khẩu đăng nhập.
+
+Đợi log cho biết ứng dụng đã khởi động. Lần đầu có thể mất vài phút vì Maven tải các thư viện. Flyway tự tạo và kiểm tra schema trong database; lần khởi động đầu nên dùng database mới, rỗng. Seed local bỏ qua database đã có dữ liệu và có thể được tắt bằng `LOCAL_SEED_ENABLED=false` trong `.env`.
 
 Nhấn `Ctrl+C` trong cửa sổ PowerShell để dừng backend. Để dừng các container sau khi dùng xong:
 
