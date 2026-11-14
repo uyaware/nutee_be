@@ -83,12 +83,10 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void expiredInvalidAndOversizedPasswordRequestsCannotChangePassword() {
+    void expiredAndInvalidRequestsCannotChangePassword() {
         user.requestPasswordReset(PasswordResetService.hash(user.getId() + ":123456"), Instant.now().minusSeconds(1));
         assertThatThrownBy(() -> service.reset(user.getEmail(), "123456", "ReplacementPassword123!")).isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> service.reset(user.getEmail(), "999999", "ReplacementPassword123!")).isInstanceOf(ApiException.class);
-        user.requestPasswordReset(PasswordResetService.hash(user.getId() + ":123456"), Instant.now().plusSeconds(900));
-        assertThatThrownBy(() -> service.reset(user.getEmail(), "123456", "ấ".repeat(30))).isInstanceOf(ApiException.class);
         assertThat(user.getPassword()).isEqualTo("old-hash");
     }
 

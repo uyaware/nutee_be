@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Email;
 public record ResetPasswordRequest(
         @NotBlank @Email @Size(max = 255) String email,
         @NotBlank @Pattern(regexp = "[0-9]{6}") String otp,
-        @NotBlank @Size(min = 12, max = 72) String password) {
+        @NotBlank @Size(min = 8, max = 100) String password) {
     /** Che mã khôi phục và mật khẩu khi dữ liệu vô tình được ghi vào log. */
     @Override
     public String toString() {

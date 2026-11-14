@@ -11,6 +11,10 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
+import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -96,7 +100,22 @@ public class SecurityConfiguration {
 
     @Bean
     PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        PasswordEncoder modern = Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+        PasswordEncoder bcrypt = new BCryptPasswordEncoder(12);
+        DelegatingPasswordEncoder encoder = new DelegatingPasswordEncoder("pbkdf2", Map.of("pbkdf2", modern));
+        encoder.setDefaultPasswordEncoderForMatches(new PasswordEncoder() {
+            @Override
+            public String encode(CharSequence rawPassword) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public boolean matches(CharSequence rawPassword, String encodedPassword) {
+                return rawPassword.toString().getBytes(StandardCharsets.UTF_8).length <= 72
+                        && bcrypt.matches(rawPassword, encodedPassword);
+            }
+        });
+        return encoder;
     }
 
     /** Chỉ cho các frontend đã cấu hình gửi request kèm cookie và header CSRF. */

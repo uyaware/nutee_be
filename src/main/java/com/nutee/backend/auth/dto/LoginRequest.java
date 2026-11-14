@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Size;
 
 /** Thông tin đăng nhập bằng email/username và lựa chọn ghi nhớ phiên. */
 public record LoginRequest(@NotBlank @Size(max = 255) String identifier,
-        @NotBlank @Size(max = 72) String password) {
+        @NotBlank @Size(max = 100) String password) {
     /** Che mật khẩu để không lộ thông tin đăng nhập trong log. */
     @Override
     public String toString() {

@@ -12,11 +12,17 @@ DECLARE
         'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=640&h=480&fit=crop',
         'https://images.unsplash.com/photo-1527814050087-3793815479db?w=640&h=480&fit=crop',
         'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=640&h=480&fit=crop'];
+    alternate_images text[] := ARRAY[
+        'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=640&h=480&fit=crop',
+        'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=640&h=480&fit=crop',
+        'https://images.unsplash.com/photo-1595225476474-87563907a212?w=640&h=480&fit=crop',
+        'https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=640&h=480&fit=crop',
+        'https://images.unsplash.com/photo-1484704849700-f032a568e944?w=640&h=480&fit=crop'];
     customer uuid := 'af000000-0000-4000-8000-000000000001';
     customer2 uuid := 'af000000-0000-4000-8000-000000000002';
     promo uuid := 'af000000-0000-4000-8000-000000000010';
     voucher uuid := 'af000000-0000-4000-8000-000000000011';
-    brand_id integer; product_id integer; image_id integer; variant_id integer; category_id integer; item_name text;
+    brand_id integer; product_id integer; image_id integer; alternate_image_id integer; variant_id integer; category_id integer; item_name text;
     address_id integer; order_id integer; item_id integer; review_id integer; request_id integer;
     product_ids integer[] := '{}'; variant_ids integer[] := '{}'; image_urls text[] := '{}';
     prices integer[] := '{}'; product_names text[] := '{}';
@@ -58,9 +64,10 @@ BEGIN
         product_names[i] := item_name;
         INSERT INTO product_categories(product_id, cat_id) VALUES (product_id, children[(kind_index - 1) * 2 + 1 + (i / 5) % 2]);
         INSERT INTO product_images(product_id, image_url, is_primary) VALUES (product_id, img, true) RETURNING id INTO image_id;
+        INSERT INTO product_images(product_id, image_url, is_primary) VALUES (product_id, alternate_images[kind_index], false) RETURNING id INTO alternate_image_id;
         FOR j IN 1..3 LOOP
             INSERT INTO product_variants(product_id, image_id, sku, price, quantity)
-            VALUES (product_id, image_id, 'NUT' || lpad(i::text, 4, '0') || 'V' || j, amount + (j - 1) * 200000, 20 + i)
+            VALUES (product_id, CASE WHEN j = 2 THEN alternate_image_id ELSE image_id END, 'NUT' || lpad(i::text, 4, '0') || 'V' || j, amount + (j - 1) * 200000, 20 + i)
             RETURNING id INTO variant_id;
             INSERT INTO variant_specifications(variant_id, specification_name, specification_value)
             VALUES (variant_id, 'kind', kinds[kind_index]), (variant_id, 'color', CASE j WHEN 3 THEN 'Trắng' ELSE 'Đen' END);

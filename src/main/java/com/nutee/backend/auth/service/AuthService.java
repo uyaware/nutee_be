@@ -48,9 +48,6 @@ public class AuthService {
         String username = request.username() == null ? "user_" + UUID.randomUUID().toString().replace("-", "")
                 : normalize(request.username());
         String email = normalize(request.email());
-        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Password must not exceed 72 UTF-8 bytes.");
-        }
         if (users.existsByEmailIgnoreCase(email) || users.existsByUsernameIgnoreCase(username)) {
             throw new ApiException(HttpStatus.CONFLICT, "Email or username is already registered.");
         }
@@ -65,8 +62,7 @@ public class AuthService {
         User user = (identifier.contains("@") ? users.findByEmailIgnoreCase(identifier)
                 : users.findByUsernameIgnoreCase(identifier)).orElse(null);
         String encoded = user != null && user.getPassword() != null ? user.getPassword() : dummyPassword;
-        boolean correct = request.password().getBytes(StandardCharsets.UTF_8).length <= 72
-                && passwords.matches(request.password(), encoded);
+        boolean correct = passwords.matches(request.password(), encoded);
         if (!correct || user == null || user.getPassword() == null) {
             throw new BadCredentialsException("Invalid credentials.");
         }

@@ -9,7 +9,6 @@ import com.nutee.backend.user.entity.User;
 import com.nutee.backend.user.repository.UserRepository;
 import java.util.Locale;
 import java.util.UUID;
-import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -28,9 +27,6 @@ public class ManagementUserService {
     @Transactional
     public ManagementUserResponse create(ManagementUserCreateRequest request) {
         String email = request.email().strip().toLowerCase(Locale.ROOT);
-        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Mật khẩu không được vượt quá 72 byte UTF-8.");
-        }
         if (users.existsByEmailIgnoreCase(email)) throw new ApiException(HttpStatus.CONFLICT, "Email đã được sử dụng.");
         User user = User.create("user_" + UUID.randomUUID().toString().replace("-", ""), email,
                 passwords.encode(request.password()), request.name().strip(), false, null);

@@ -82,9 +82,6 @@ public class PasswordResetService {
     @Transactional(noRollbackFor = ApiException.class)
     public void reset(String email, String otp, String password) {
         requireEnabled();
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Mật khẩu tối đa 72 byte UTF-8.");
-        }
         var found = users.findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT))
                 .orElseThrow(PasswordResetService::invalidToken);
         var user = users.findLockedById(found.getId()).orElseThrow(PasswordResetService::invalidToken);

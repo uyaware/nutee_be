@@ -282,7 +282,8 @@ class CatalogIT {
             }
             assertThat(seeded.queryForObject("SELECT count(*) FROM products WHERE default_variant_id IS NULL", Integer.class)).isZero();
             assertThat(seeded.queryForObject("SELECT count(*) FROM orders WHERE user_address_id IS NULL", Integer.class)).isZero();
-            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images WHERE image_url LIKE 'https://images.unsplash.com/%'", Integer.class)).isEqualTo(50);
+            assertThat(seeded.queryForObject("SELECT count(*) FROM product_images WHERE image_url LIKE 'https://images.unsplash.com/%'", Integer.class)).isEqualTo(100);
+            assertThat(seeded.queryForObject("SELECT count(DISTINCT image_id) FROM product_variants WHERE sku LIKE 'NUT0001V%'", Integer.class)).isEqualTo(2);
 
         }
     }
