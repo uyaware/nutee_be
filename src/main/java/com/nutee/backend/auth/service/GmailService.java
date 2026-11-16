@@ -16,7 +16,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
-/** Gửi liên kết khôi phục bằng tài khoản Gmail đã cấp quyền gmail.send. */
+/** Gửi OTP xác thực email và khôi phục bằng tài khoản Gmail đã cấp quyền gmail.send. */
 @Service
 public class GmailService {
     private static final String RESET_TEMPLATE = loadResetTemplate();
@@ -53,7 +53,7 @@ public class GmailService {
 
     /** Trao đổi refresh token rồi gửi MIME message qua Gmail API. */
     public void sendPasswordReset(String recipient, String resetLink) {
-        send(recipient, renderPasswordReset(resetLink, null));
+        send(recipient, "NUTEE - Đặt lại mật khẩu", renderPasswordReset(resetLink, null));
     }
 
     /** Gửi mã OTP sáu chữ số cùng đường dẫn nhập mã, không ghi mã vào log. */
@@ -61,7 +61,19 @@ public class GmailService {
         if (otp == null || !otp.matches("[0-9]{6}")) {
             throw new IllegalArgumentException("OTP must contain exactly six digits.");
         }
-        send(recipient, renderPasswordReset(resetLink, otp));
+        send(recipient, "NUTEE - Đặt lại mật khẩu", renderPasswordReset(resetLink, otp));
+    }
+
+    /** Gửi OTP xác thực email riêng với email khôi phục mật khẩu. */
+    public void sendEmailVerificationOtp(String recipient, String otp) {
+        if (otp == null || !otp.matches("[0-9]{6}")) {
+            throw new IllegalArgumentException("OTP must contain exactly six digits.");
+        }
+        send(recipient, "NUTEE - Xác thực email", "<!doctype html><html lang=\"vi\"><body>"
+                + "<h1>Xác thực email NUTEE</h1><p>Mã xác thực email của bạn:</p>"
+                + "<p style=\"font-size:32px;font-weight:bold;letter-spacing:8px\">" + HtmlUtils.htmlEscape(otp)
+                + "</p><p>Mã có hiệu lực 15 phút, chỉ dùng một lần để xác thực email. "
+                + "Không chia sẻ mã này với người khác.</p></body></html>");
     }
 
     static String renderPasswordReset(String resetLink, String otp) {
@@ -81,7 +93,7 @@ public class GmailService {
         }
     }
 
-    private void send(String recipient, String body) {
+    private void send(String recipient, String subjectText, String body) {
         if (clientId.isBlank() || clientSecret.isBlank() || refreshToken.isBlank()
                 || recipient == null || recipient.contains("\r") || recipient.contains("\n")) {
             throw new DeliveryException();
@@ -98,7 +110,7 @@ public class GmailService {
             if (token == null || token.access_token() == null || token.access_token().isBlank()) {
                 throw new DeliveryException();
             }
-            String subject = Base64.getEncoder().encodeToString("NUTEE - Đặt lại mật khẩu".getBytes(StandardCharsets.UTF_8));
+            String subject = Base64.getEncoder().encodeToString(subjectText.getBytes(StandardCharsets.UTF_8));
             String encodedBody = Base64.getMimeEncoder(76, new byte[] {'\r', '\n'})
                     .encodeToString(body.getBytes(StandardCharsets.UTF_8));
             String mime = "To: " + recipient + "\r\nSubject: =?UTF-8?B?" + subject + "?=\r\n"

@@ -60,4 +60,20 @@ class GmailServiceTest {
                 .hasMessageNotContaining("sensitive response");
         server.verify();
     }
+
+    @Test
+    void sendsVerificationEmailWithItsOwnPurposeAndSubject() {
+        server.expect(requestTo("https://oauth2.googleapis.com/token"))
+                .andRespond(withSuccess("{\"access_token\":\"access\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://gmail.googleapis.com/gmail/v1/users/me/messages/send"))
+                .andExpect(request -> {
+                    var json = new ObjectMapper().readTree(((MockClientHttpRequest) request).getBodyAsBytes());
+                    String mime = new String(Base64.getUrlDecoder().decode(json.get("raw").asText()), StandardCharsets.UTF_8);
+                    assertThat(mime).contains("Subject: =?UTF-8?B?" + Base64.getEncoder().encodeToString("NUTEE - Xác thực email".getBytes(StandardCharsets.UTF_8)));
+                    String body = new String(Base64.getMimeDecoder().decode(mime.split("\r\n\r\n", 2)[1]), StandardCharsets.UTF_8);
+                    assertThat(body).contains("Xác thực email NUTEE", "012345", "15 phút").doesNotContain("Đặt lại mật khẩu");
+                }).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        service.sendEmailVerificationOtp("test@example.com", "012345");
+        server.verify();
+    }
 }

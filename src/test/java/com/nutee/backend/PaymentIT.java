@@ -103,10 +103,10 @@ class PaymentIT {
     @Test void orderHistoryAndManagementReadsEnforceOwnershipAndRoles() throws Exception {
         cart.add(OWNER, 11, 1);
         var order = orders.create(OWNER, request("cod", 10025000));
-        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", true, null));
         jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
         var staffCookie = cookie(staff.getId());
-        var other = users.saveAndFlush(User.create("other_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Other", false, null));
+        var other = users.saveAndFlush(User.create("other_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Other", true, null));
         mvc.perform(get("/api/v1/management/orders").cookie(customer)).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/orders/" + order.id() + "/history").cookie(cookie(other.getId())))
                 .andExpect(status().isNotFound());
@@ -123,7 +123,7 @@ class PaymentIT {
     @Test void staffHandlesCodAndCannotCancelAfterShipping() throws Exception {
         cart.add(OWNER, 11, 1);
         int id = orders.create(OWNER, request("cod", 10025000)).id();
-        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", true, null));
         jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
         var staffCookie = cookie(staff.getId());
         String path = "/api/v1/management/orders/" + id + "/status";
@@ -140,7 +140,7 @@ class PaymentIT {
 
     @Test void payosMustBePaidBeforeHandlingAndCannotBeCancelledAfterPayment() throws Exception {
         int id = qr(); long code = code(id);
-        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", true, null));
         jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
         var staffCookie = cookie(staff.getId());
         String path = "/api/v1/management/orders/" + id + "/status";
@@ -160,7 +160,7 @@ class PaymentIT {
 
     @Test void staffCancellationOfUnpaidPayosRequiresProviderConfirmation() throws Exception {
         int id = qr(); long code = code(id);
-        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", false, null));
+        var staff = users.saveAndFlush(User.create("staff_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "Staff", true, null));
         jdbc.update("update users set role = 'STAFF' where id = ?", staff.getId());
         var staffCookie = cookie(staff.getId());
         String path = "/api/v1/management/orders/" + id + "/status";
@@ -193,7 +193,7 @@ class PaymentIT {
                 .andExpect(jsonPath("$.accountName").value("NUTEE TEST"))
                 .andExpect(jsonPath("$.transferContent").value(orders.get(OWNER, id).code()));
         assertThat(jdbc.queryForObject("SELECT qr_code FROM orders WHERE id = ?", String.class, id)).isEqualTo("000201TEST");
-        User stranger = users.saveAndFlush(User.create("qr-stranger", "qr-stranger@example.invalid", "hash", "Other", false, null));
+        User stranger = users.saveAndFlush(User.create("qr-stranger", "qr-stranger@example.invalid", "hash", "Other", true, null));
         mvc.perform(get("/api/v1/orders/" + id + "/payment").cookie(cookie(stranger.getId())))
                 .andExpect(status().isNotFound());
         assertThat(payments.get(OWNER, id).toString()).doesNotContain("000201TEST");
@@ -226,7 +226,7 @@ class PaymentIT {
     }
     @Test void checkoutUsesAccountContactAndRejectsAnotherUsersAddressOrIncompleteProfile() throws Exception {
         cart.add(OWNER, 11, 1);
-        User other = users.saveAndFlush(User.create("delivery-other", "delivery-other@example.invalid", "hash", "Other", false, null));
+        User other = users.saveAndFlush(User.create("delivery-other", "delivery-other@example.invalid", "hash", "Other", true, null));
         deliveryAddress(other.getId());
         var foreign = new CreateOrderRequest(UUID.randomUUID(), List.of(11), "", 10025000L, addressId(other.getId()), "", "cod");
         assertThatThrownBy(() -> orders.create(OWNER, foreign)).isInstanceOf(ApiException.class).hasMessageContaining("địa chỉ");
@@ -250,7 +250,7 @@ class PaymentIT {
         assertThatThrownBy(() -> orders.create(OWNER, request("qr", 10025000))).isInstanceOf(ApiException.class);
         assertThat(cart.get(OWNER).items()).hasSize(1);
         var order = orders.create(OWNER, request("cod", 10025000));
-        var stranger = users.saveAndFlush(User.create("stranger", "stranger@example.invalid", "hash", "Stranger", false, null));
+        var stranger = users.saveAndFlush(User.create("stranger", "stranger@example.invalid", "hash", "Stranger", true, null));
         mvc.perform(get("/api/v1/orders/" + order.id()).cookie(cookie(stranger.getId()))).andExpect(status().isNotFound());
         mvc.perform(post("/api/v1/orders/" + order.id() + "/cancel").cookie(customer)).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/orders")).andExpect(status().isUnauthorized());
@@ -362,7 +362,7 @@ class PaymentIT {
     }
 
     @Test void concurrentCheckoutCannotOversellAndConcurrentDuplicateWebhooksCreditOnce() throws Exception {
-        User other = users.saveAndFlush(User.create("other", "other@example.invalid", "hash", "Other", false, null));
+        User other = users.saveAndFlush(User.create("other", "other@example.invalid", "hash", "Other", true, null));
         deliveryAddress(other.getId());
         jdbc.update("UPDATE product_variants SET quantity = 1 WHERE id = 11");
         cart.add(OWNER, 11, 1); cart.add(other.getId(), 11, 1);
@@ -383,7 +383,7 @@ class PaymentIT {
     }
 
     @Test void concurrentCheckoutRespectsLastVoucherUseAndCancellationFreesQuota() throws Exception {
-        User other = users.saveAndFlush(User.create("voucher-other", "voucher-other@example.invalid", "hash", "Other", false, null));
+        User other = users.saveAndFlush(User.create("voucher-other", "voucher-other@example.invalid", "hash", "Other", true, null));
         deliveryAddress(other.getId());
         UUID voucher = UUID.randomUUID();
         jdbc.update("INSERT INTO vouchers(id, code, applied_for, type, value, is_active, start_date, end_date, quantity, max_uses_per_user) VALUES (?, 'LAST100', 'all', 'fixed', 100000, true, now() - interval '1 day', now() + interval '1 day', 1, 1)", voucher);

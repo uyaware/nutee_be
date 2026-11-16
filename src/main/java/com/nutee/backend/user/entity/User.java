@@ -33,6 +33,12 @@ public class User {
     private Instant passwordResetExpiresAt;
     @Column(name = "password_reset_attempts", nullable = false)
     private int passwordResetAttempts;
+    @Column(name = "email_verification_hash", length = 64)
+    private String emailVerificationHash;
+    @Column(name = "email_verification_expires_at")
+    private Instant emailVerificationExpiresAt;
+    @Column(name = "email_verification_attempts", nullable = false)
+    private int emailVerificationAttempts;
     @Column(name = "full_name", length = 100)
     private String fullName;
     @Column(length = 10)
@@ -68,6 +74,22 @@ public class User {
 
     public void verifyEmail() {
         emailVerified = true;
+        emailVerificationHash = null;
+        emailVerificationExpiresAt = null;
+        emailVerificationAttempts = 0;
+    }
+
+    /** Thay mã xác thực email, giữ vòng đời độc lập với mã khôi phục mật khẩu. */
+    public void requestEmailVerification(String hash, Instant expiresAt) {
+        emailVerificationHash = hash;
+        emailVerificationExpiresAt = expiresAt;
+        emailVerificationAttempts = 0;
+    }
+
+    /** Vô hiệu mã sau năm lần sai, giữ thời hạn để không vượt giới hạn gửi lại. */
+    public void rejectEmailVerificationOtp() {
+        emailVerificationAttempts = Math.min(5, emailVerificationAttempts + 1);
+        if (emailVerificationAttempts >= 5) emailVerificationHash = null;
     }
 
     /** Chỉ cập nhật thông tin liên hệ, không cho phép đổi email, mật khẩu hoặc vai trò qua hồ sơ. */

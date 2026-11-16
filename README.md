@@ -167,3 +167,14 @@ Flyway V6 thêm `users.password_reset_attempts` và vô hiệu liên kết khôi
 Email HTML nằm tại `src/main/resources/mail/password-reset.html`.
 Bật gửi thư bằng `PASSWORD_RESET_ENABLED=true`, cấu hình `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`
 và `PASSWORD_RESET_URL` trỏ đến trang `/reset-password` của frontend. Secret chỉ đặt trong biến môi trường.
+
+# Xác thực email trước khi mở phiên
+
+- Đăng nhập chỉ nhận email trong `identifier`. Đăng ký và đăng nhập đúng mật khẩu nhưng chưa xác thực trả `verificationRequired: true`, `user: null`, thông tin `verification` và cookie HttpOnly `emailVerification` có hạn 15 phút. Chưa có access/refresh token.
+- `GET /api/v1/auth/verification` lấy email, thời gian còn lại và thời gian chờ gửi lại từ cookie chờ. `POST /api/v1/auth/verification/resend` gửi mã mới; `POST /api/v1/auth/verification/confirm` nhận `{ "otp": "012345" }`. Hai API ghi vẫn yêu cầu CSRF.
+- OTP có hạn 15 phút, chờ 60 giây giữa các lần gửi, tối đa 5 lần sai. Chỉ lưu hash có phân biệt mục đích; khóa dòng tài khoản khi gửi hoặc tiêu thụ. Xác nhận thành công cập nhật `email_verified`, xóa OTP, cấp phiên đầy đủ và xóa cookie chờ.
+- Mọi API bảo vệ kiểm tra JWT rồi đọc tài khoản hiện tại, kiểm tra `is_active` và `email_verified` trước khi tạo quyền. JWT cũ và claim `email_verified` không thay thế database. Email chưa xác thực nhận HTTP 401 với `code: EMAIL_NOT_VERIFIED`, áp dụng cho mọi vai trò. Các API công khai vẫn truy cập được.
+- Refresh của tài khoản chưa xác thực bị thu hồi và xóa cookie đăng nhập. Đăng xuất xóa cả cookie chờ. Google không tự liên kết tài khoản trùng email.
+- Flyway V7 chỉ thêm ba cột `email_verification_hash`, `email_verification_expires_at`, `email_verification_attempts`; giữ nguyên tài khoản và trạng thái xác thực cũ.
+- Email xác thực dùng chung thông tin Gmail OAuth ở trên, không phụ thuộc công tắc khôi phục mật khẩu. Gửi thất bại vẫn giữ tài khoản chờ và cho phép gửi lại. Khôi phục mật khẩu báo rõ email không tồn tại, tài khoản chỉ dùng Google hoặc lỗi gửi thư; đổi mật khẩu không tự xác thực email.
+- Chạy kiểm tra: `./mvnw test` và `./mvnw verify -Dit.test=AuthFlowIT` (cần Docker). Gmail được giả lập trong test, PostgreSQL dùng container thật.

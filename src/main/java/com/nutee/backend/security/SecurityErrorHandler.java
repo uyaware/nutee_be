@@ -29,9 +29,23 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
     public void commence(HttpServletRequest request, HttpServletResponse response,
             AuthenticationException exception) throws IOException {
         response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+        if (exception instanceof EmailNotVerifiedException) {
+            var problem = ApiProblems.create(HttpStatus.UNAUTHORIZED, exception.getMessage(), request.getRequestURI());
+            problem.setProperty("code", "EMAIL_NOT_VERIFIED");
+            response.setStatus(401);
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+            response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            objectMapper.writeValue(response.getOutputStream(), problem);
+            return;
+        }
         write(request, response, HttpStatus.UNAUTHORIZED, exception instanceof BadCredentialsException
                 ? "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại."
                 : "Vui lòng đăng nhập để tiếp tục.");
+    }
+
+    /** Database không khả dụng thì không cho phép truy cập dữ liệu bảo vệ. */
+    public void unavailable(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        write(request, response, HttpStatus.SERVICE_UNAVAILABLE, "Không thể kiểm tra phiên đăng nhập. Vui lòng thử lại.");
     }
 
     /** Trả lỗi 403 và phân biệt CSRF hết hạn để frontend có thể lấy lại CSRF. */

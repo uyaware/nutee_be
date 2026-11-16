@@ -43,7 +43,7 @@ class ManagementTaxonomyIT {
     }
 
     private Cookie account(String role) {
-        User user = users.saveAndFlush(User.create("user_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "test-hash", "User", false, null));
+        User user = users.saveAndFlush(User.create("user_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "test-hash", "User", true, null));
         jdbc.update("update users set role = ? where id = ?", role, user.getId());
         entityManager.clear();
         return new Cookie("accessToken", tokens.issue(users.findById(user.getId()).orElseThrow()).accessToken());

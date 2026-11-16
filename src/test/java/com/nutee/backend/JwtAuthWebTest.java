@@ -39,17 +39,24 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfiguration.class, SecurityErrorHandler.class, JwtCookies.class, GlobalExceptionHandler.class})
 @ActiveProfiles("test")
 class JwtAuthWebTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.user.repository.UserRepository accountUsers;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.auth.service.EmailVerificationService emailVerification;
+
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper json;
     @MockitoBean private JwtDecoder decoder;
     @MockitoBean private AuthService auth;
     @MockitoBean private GoogleTokenVerifier google;
     private final UUID id = UUID.randomUUID();
-    private final UserResponse user = new UserResponse(id, "tester", "test@example.com", "Test", false, null, "CUSTOMER");
+    private final UserResponse user = new UserResponse(id, "tester", "test@example.com", "Test", true, null, "CUSTOMER");
     private final AuthResponse tokens = new AuthResponse("access-jwt", "refresh-jwt", 900, 604800, user);
 
     @BeforeEach
     void configure() {
+        var account = com.nutee.backend.user.entity.User.create("tester", "test@example.com", "hash", "Test", true, null);
+        given(accountUsers.findById(id)).willReturn(java.util.Optional.of(account));
         given(google.name()).willReturn("GOOGLE");
         given(auth.login(any())).willReturn(tokens);
         given(auth.register(any())).willReturn(tokens);
@@ -156,7 +163,7 @@ class JwtAuthWebTest {
                 .content("{\"identifier\":\"staff@example.com\",\"password\":\"wrong-password\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
-                .andExpect(jsonPath("$.detail").value("Email/tên đăng nhập hoặc mật khẩu không đúng."));
+                .andExpect(jsonPath("$.detail").value("Email hoặc mật khẩu không đúng."));
     }
 
     @Test

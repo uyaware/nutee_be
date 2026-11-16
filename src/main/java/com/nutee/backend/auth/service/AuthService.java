@@ -8,6 +8,7 @@ import com.nutee.backend.auth.entity.AuthProvider;
 import com.nutee.backend.auth.repository.AuthProviderRepository;
 import com.nutee.backend.common.exception.ApiException;
 import com.nutee.backend.security.HmacTokenService;
+import com.nutee.backend.security.EmailNotVerifiedException;
 import com.nutee.backend.user.entity.User;
 import com.nutee.backend.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
@@ -31,36 +32,41 @@ public class AuthService {
     private final AuthProviderRepository providers;
     private final PasswordEncoder passwords;
     private final HmacTokenService tokens;
+    private final EmailVerificationService verification;
     private final String dummyPassword;
 
     /** Nhận các dependency và tạo hash giả để kiểm tra mật khẩu cả khi tài khoản không tồn tại. */
     public AuthService(UserRepository users, AuthProviderRepository providers,
-            PasswordEncoder passwords, HmacTokenService tokens) {
+            PasswordEncoder passwords, HmacTokenService tokens, EmailVerificationService verification) {
         this.users = users;
         this.providers = providers;
         this.passwords = passwords;
         this.tokens = tokens;
+        this.verification = verification;
         this.dummyPassword = passwords.encode(UUID.randomUUID().toString());
     }
 
-    /** Tạo tài khoản CUSTOMER bằng email/mật khẩu rồi mở phiên đăng nhập. */
+    /** Tạo CUSTOMER chưa xác thực, chỉ cấp cookie chờ và gửi OTP. */
     public AuthResponse register(RegisterRequest request) {
         String username = request.username() == null ? "user_" + UUID.randomUUID().toString().replace("-", "")
                 : normalize(request.username());
         String email = normalize(request.email());
-        if (users.existsByEmailIgnoreCase(email) || users.existsByUsernameIgnoreCase(username)) {
-            throw new ApiException(HttpStatus.CONFLICT, "Email or username is already registered.");
+        if (users.existsByEmailIgnoreCase(email)) {
+            throw new ApiException(HttpStatus.CONFLICT, "Email đã tồn tại. Vui lòng đăng nhập hoặc khôi phục mật khẩu.");
+        }
+        if (users.existsByUsernameIgnoreCase(username)) {
+            throw new ApiException(HttpStatus.CONFLICT, "Tên tài khoản đã tồn tại.");
         }
         User user = users.saveAndFlush(User.create(username, email, passwords.encode(request.password()),
                 request.fullName(), false, null));
         return startSession(user);
     }
 
-    /** Kiểm tra email hoặc username và mật khẩu trước khi cấp cặp JWT mới. */
+    /** Chỉ đăng nhập bằng email; tài khoản chưa xác thực không được cấp phiên đầy đủ. */
     public AuthResponse login(LoginRequest request) {
         String identifier = normalize(request.identifier());
-        User user = (identifier.contains("@") ? users.findByEmailIgnoreCase(identifier)
-                : users.findByUsernameIgnoreCase(identifier)).orElse(null);
+        if (!identifier.contains("@")) throw new BadCredentialsException("Email is required.");
+        User user = users.findLockedByEmailIgnoreCase(identifier).orElse(null);
         String encoded = user != null && user.getPassword() != null ? user.getPassword() : dummyPassword;
         boolean correct = passwords.matches(request.password(), encoded);
         if (!correct || user == null || user.getPassword() == null) {
@@ -73,12 +79,21 @@ public class AuthService {
     }
 
     /** Xác minh refresh token hiện tại và xoay cặp JWT, không kéo dài hạn phiên ban đầu. */
+    @Transactional(noRollbackFor = BadCredentialsException.class)
     public AuthResponse refresh(String token) {
         Jwt jwt = refreshClaims(token);
         User user = users.findLockedById(UUID.fromString(jwt.getSubject()))
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token."));
-        if (!user.isActive() || !matchesRefreshToken(user, token)) {
+        if (!matchesRefreshToken(user, token)) {
             throw new BadCredentialsException("Invalid refresh token.");
+        }
+        if (!user.isActive()) {
+            user.replaceRefreshToken(null);
+            throw new BadCredentialsException("Invalid refresh token.");
+        }
+        if (!user.isEmailVerified()) {
+            user.replaceRefreshToken(null);
+            throw new EmailNotVerifiedException();
         }
         return storeTokens(user, tokens.issue(user, jwt.getExpiresAt()));
     }
@@ -130,6 +145,7 @@ public class AuthService {
         User user = users.findLockedById(userId)
                 .orElseThrow(() -> new BadCredentialsException("Invalid account."));
         if (!user.isActive()) throw new BadCredentialsException("Invalid account.");
+        if (!user.isEmailVerified()) throw new EmailNotVerifiedException();
         if (!user.getEmail().equalsIgnoreCase(identity.email())) {
             throw new ApiException(HttpStatus.CONFLICT, "Provider email must match the signed-in account email.");
         }
@@ -155,6 +171,7 @@ public class AuthService {
         if (!locked.isActive()) {
             throw new DisabledException("Account is disabled.");
         }
+        if (!locked.isEmailVerified()) return verification.begin(locked);
         return storeTokens(locked, tokens.issue(locked));
     }
 
@@ -185,6 +202,7 @@ public class AuthService {
         if (!user.isActive()) {
             throw new BadCredentialsException("Invalid account.");
         }
+        if (!user.isEmailVerified()) throw new EmailNotVerifiedException();
         return user;
     }
 

@@ -48,6 +48,11 @@ import org.springframework.web.bind.annotation.RestController;
         GlobalExceptionHandler.class, InfrastructureWebTest.ProbeController.class})
 @ActiveProfiles("test")
 class InfrastructureWebTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.user.repository.UserRepository accountUsers;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.auth.service.EmailVerificationService emailVerification;
+
 
     @MockitoBean
     private JwtDecoder decoder;

@@ -25,6 +25,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfiguration.class, SecurityErrorHandler.class, GlobalExceptionHandler.class})
 @ActiveProfiles("test")
 class PasswordResetWebTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.user.repository.UserRepository accountUsers;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.auth.service.EmailVerificationService emailVerification;
+
     @Autowired private MockMvc mvc;
     @MockitoBean private JwtDecoder decoder;
     @MockitoBean private PasswordResetService passwords;

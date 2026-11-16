@@ -27,13 +27,13 @@ class AuthServiceTest {
             "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=",
             "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=", Duration.ofMinutes(15), Duration.ofDays(7)));
     private final AuthService auth = new AuthService(users, mock(AuthProviderRepository.class),
-            passwords, tokens);
+            passwords, tokens, mock(EmailVerificationService.class));
     private User user;
     private String original;
 
     @BeforeEach
     void configure() {
-        user = User.create("tester", "test@example.com", "hash", "Test", false, null);
+        user = User.create("tester", "test@example.com", "hash", "Test", true, null);
         original = tokens.issue(user).refreshToken();
         user.replaceRefreshToken(original);
         given(users.findLockedById(user.getId())).willReturn(Optional.of(user));
@@ -42,7 +42,7 @@ class AuthServiceTest {
     @Test
     void activeStaffCanLoginWithCorrectCredentials() {
         user.updateAccess("STAFF", true);
-        given(users.findByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
+        given(users.findLockedByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
         given(passwords.matches("correct-password", "hash")).willReturn(true);
         var response = auth.login(new LoginRequest(user.getEmail(), "correct-password"));
         assertThat(response.user().role()).isEqualTo("STAFF");
@@ -51,7 +51,7 @@ class AuthServiceTest {
 
     @Test
     void wrongPasswordAndUnknownAccountBothRejectCredentials() {
-        given(users.findByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
+        given(users.findLockedByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
         assertThatThrownBy(() -> auth.login(new LoginRequest(user.getEmail(), "wrong-password")))
                 .isInstanceOf(BadCredentialsException.class);
         assertThatThrownBy(() -> auth.login(new LoginRequest("missing@example.com", "wrong-password")))
@@ -61,7 +61,7 @@ class AuthServiceTest {
     @Test
     void disabledStaffIsReportedOnlyAfterPasswordVerification() {
         user.updateAccess("STAFF", false);
-        given(users.findByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
+        given(users.findLockedByEmailIgnoreCase(user.getEmail())).willReturn(Optional.of(user));
         given(passwords.matches("correct-password", "hash")).willReturn(true);
         assertThatThrownBy(() -> auth.login(new LoginRequest(user.getEmail(), "correct-password")))
                 .isInstanceOf(org.springframework.security.authentication.DisabledException.class);
@@ -112,6 +112,23 @@ class AuthServiceTest {
             assertThatThrownBy(() -> auth.refresh(invalid)).isInstanceOf(BadCredentialsException.class);
             auth.logout(invalid);
         }
+        verifyNoInteractions(users);
+    }
+
+    @Test
+    void unverifiedRefreshRevokesStoredTokenAndCannotIssueTokens() {
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "emailVerified", false);
+        assertThatThrownBy(() -> auth.refresh(original))
+                .isInstanceOf(com.nutee.backend.security.EmailNotVerifiedException.class);
+        assertThat(user.getRefreshToken()).isNull();
+        assertThatThrownBy(() -> tokens.issue(user))
+                .isInstanceOf(com.nutee.backend.security.EmailNotVerifiedException.class);
+    }
+
+    @Test
+    void usernameCannotBeUsedAsLoginIdentifier() {
+        assertThatThrownBy(() -> auth.login(new LoginRequest("tester", "correct-password")))
+                .isInstanceOf(BadCredentialsException.class);
         verifyNoInteractions(users);
     }
 }

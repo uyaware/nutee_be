@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Locale;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Xử lý mã khôi phục mật khẩu, gửi email và thu hồi refresh token sau khi đổi mật khẩu. */
 @Service
-@Slf4j
 public class PasswordResetService {
     private static final Duration TOKEN_TTL = Duration.ofMinutes(15);
     private static final Duration RESEND_INTERVAL = Duration.ofMinutes(1);
@@ -52,18 +50,18 @@ public class PasswordResetService {
     @Transactional
     public void forgot(String email) {
         requireEnabled();
-        var found = users.findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT));
-        if (found.isEmpty()) {
-            return;
+        var user = users.findLockedByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Email chưa được đăng ký."));
+        if (!user.isActive()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Tài khoản đã bị khóa.");
         }
-        var user = users.findLockedById(found.get().getId()).orElseThrow();
-        if (!user.isActive() || user.getPassword() == null) {
-            return;
+        if (user.getPassword() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Tài khoản này đăng nhập bằng Google. Vui lòng chọn đăng nhập Google.");
         }
         Instant now = Instant.now();
         if (user.getPasswordResetExpiresAt() != null
                 && user.getPasswordResetExpiresAt().isAfter(now.plus(TOKEN_TTL.minus(RESEND_INTERVAL)))) {
-            return;
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "Vui lòng chờ đủ 60 giây trước khi gửi lại mã.");
         }
         String otp;
         do {
@@ -73,8 +71,7 @@ public class PasswordResetService {
             mail.sendPasswordResetOtp(user.getEmail(), resetUrl, otp);
             user.requestPasswordReset(hash(user.getId() + ":" + otp), now.plus(TOKEN_TTL));
         } catch (GmailService.DeliveryException exception) {
-            // Giữ phản hồi chung để không tiết lộ email có tài khoản; không log token hay nội dung mail.
-            log.warn("Password reset email delivery failed");
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Chưa gửi được email khôi phục. Vui lòng thử lại.");
         }
     }
 
@@ -82,9 +79,8 @@ public class PasswordResetService {
     @Transactional(noRollbackFor = ApiException.class)
     public void reset(String email, String otp, String password) {
         requireEnabled();
-        var found = users.findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT))
+        var user = users.findLockedByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT))
                 .orElseThrow(PasswordResetService::invalidToken);
-        var user = users.findLockedById(found.getId()).orElseThrow(PasswordResetService::invalidToken);
         if (!user.isActive() || user.getPassword() == null || user.getPasswordResetHash() == null
                 || user.getPasswordResetAttempts() >= 5 || user.getPasswordResetExpiresAt() == null
                 || !user.getPasswordResetExpiresAt().isAfter(Instant.now())) {

@@ -28,7 +28,7 @@ class JwtConfigurationTest {
     @BeforeEach
     void configure() {
         tokens = new HmacTokenService(new JwtProperties(ACCESS, REFRESH, Duration.ofMinutes(15), Duration.ofDays(7)));
-        user = User.create("tester", "test@example.com", "hash", "Test", false, null);
+        user = User.create("tester", "test@example.com", "hash", "Test", true, null);
     }
 
     @Test
@@ -85,6 +85,30 @@ class JwtConfigurationTest {
             assertThat(validator.validate(new JwtProperties("c2hvcnQ=", REFRESH, Duration.ofMinutes(15), Duration.ofDays(7)))).isNotEmpty();
             assertThat(validator.validate(new JwtProperties(null, null, Duration.ofMinutes(15), Duration.ofDays(7)))).isNotEmpty();
         }
+    }
+
+    @Test
+    void pendingTokenHasNoRoleAndCannotReplaceAccessOrRefresh() {
+        String pending = tokens.issueVerification(user);
+        var claims = tokens.decodeVerification(pending);
+        assertThat(claims.getSubject()).isEqualTo(user.getId().toString());
+        assertThat(claims.hasClaim("role")).isFalse();
+        assertThatThrownBy(() -> tokens.decodeAccess(pending)).isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> tokens.decodeRefresh(pending)).isInstanceOf(JwtException.class);
+        var session = tokens.issue(user);
+        assertThatThrownBy(() -> tokens.decodeVerification(session.accessToken())).isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> tokens.decodeVerification(session.refreshToken())).isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void expiredPendingTokenRequiresPasswordLoginAgain() throws Exception {
+        SignedJWT expired = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), new JWTClaimsSet.Builder()
+                .subject(user.getId().toString()).jwtID(UUID.randomUUID().toString())
+                .issueTime(Date.from(Instant.now().minusSeconds(1000)))
+                .expirationTime(Date.from(Instant.now().minusSeconds(1)))
+                .claim("token_type", "email_verification").build());
+        expired.sign(new MACSigner(Base64.getDecoder().decode(REFRESH)));
+        assertThatThrownBy(() -> tokens.decodeVerification(expired.serialize())).isInstanceOf(JwtException.class);
     }
 
     private String sign(String issuer, String audience, String kind, Instant expiry, boolean identifiers)

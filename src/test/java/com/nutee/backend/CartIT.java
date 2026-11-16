@@ -147,7 +147,7 @@ class CartIT {
                 .content("{\"variantId\":11,\"quantity\":1}")).andExpect(status().isForbidden());
         mvc.perform(delete("/api/v1/cart").with(csrf())).andExpect(status().isUnauthorized());
         add(owner, 11, 1, 200);
-        User other = users.saveAndFlush(User.create("other", "other@example.invalid", null, null, false, null));
+        User other = users.saveAndFlush(User.create("other", "other@example.invalid", null, null, true, null));
         Cookie otherCookie = cookie(other.getId());
         mvc.perform(get("/api/v1/cart").cookie(otherCookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.items").isEmpty());
@@ -183,7 +183,7 @@ class CartIT {
     @Sql(statements = "SELECT 1")
     void concurrentAddsCreateOneRowWithoutLosingQuantityOrExceedingStock() throws Exception {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
-        User user = users.saveAndFlush(User.create("cart_" + suffix, suffix + "@example.invalid", null, null, false, null));
+        User user = users.saveAndFlush(User.create("cart_" + suffix, suffix + "@example.invalid", null, null, true, null));
         Integer productId = jdbc.queryForObject("INSERT INTO products (name, is_published) VALUES ('Concurrent cart', true) RETURNING id", Integer.class);
         Integer variantId = jdbc.queryForObject("INSERT INTO product_variants (product_id, sku, price, quantity) VALUES (?, ?, 100, 3) RETURNING id",
                 Integer.class, productId, "CART-" + suffix);

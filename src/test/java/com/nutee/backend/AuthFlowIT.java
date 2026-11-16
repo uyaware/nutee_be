@@ -66,6 +66,7 @@ class AuthFlowIT {
     @MockitoBean private GoogleTokenVerifier google;
     @MockitoBean private com.nutee.backend.auth.service.GmailService mail;
     @Autowired private com.nutee.backend.auth.service.PasswordResetService passwordReset;
+    @Autowired private com.nutee.backend.auth.service.EmailVerificationService verification;
 
     @Test
     void otpFailuresCommitAcrossTransactionsAndCorrectCodeCannotBypassLimit() {
@@ -93,20 +94,22 @@ class AuthFlowIT {
     }
 
     @Test
-    void registrationHashesPasswordAndReturnsSafeTokensAndUser() throws Exception {
+    void registrationHashesPasswordAndReturnsOnlyPendingVerification() throws Exception {
         String username = username();
-        JsonNode response = register(username);
+        JsonNode response = registerPending(username);
         var user = users.findByUsernameIgnoreCase(username).orElseThrow();
         assertThat(passwords.matches(PASSWORD, user.getPassword())).isTrue();
         assertThat(user.getPassword()).isNotEqualTo(PASSWORD);
         assertThat(user.isEmailVerified()).isFalse();
         assertThat(response.path("user").has("password")).isFalse();
         assertThat(response.path("user").has("refreshToken")).isFalse();
-        assertThat(response.path("user").path("role").asText()).isEqualTo("CUSTOMER");
-        assertThat(response.path("expiresIn").asLong()).isEqualTo(900);
+        assertThat(response.path("user").isNull()).isTrue();
+        assertThat(response.path("verificationRequired").asBoolean()).isTrue();
+        assertThat(response.path("verification").path("email").asText()).isEqualTo(user.getEmail());
+        assertThat(response.path("expiresIn").asLong()).isZero();
         String stored = jdbc.queryForObject("SELECT refresh_token FROM users WHERE id = ?",
                 String.class, user.getId());
-        assertThat(stored).isEqualTo(response.path("refreshToken").asText());
+        assertThat(stored).isNull();
     }
 
     @Test
@@ -115,15 +118,18 @@ class AuthFlowIT {
         mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("email", email, "password", PASSWORD))))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.user.username").isNotEmpty())
-                .andExpect(jsonPath("$.user.email").value(email));
+                .andExpect(jsonPath("$.verificationRequired").value(true))
+                .andExpect(jsonPath("$.verification.email").value(email));
     }
 
     @Test
-    void loginAcceptsEmailOrUsernameWithoutCaseSensitivity() throws Exception {
+    void loginAcceptsEmailWithoutCaseSensitivityAndRejectsUsername() throws Exception {
         String username = username();
         register(username);
-        for (String identifier : new String[]{username.toUpperCase(), (username + "@example.com").toUpperCase()}) {
+        mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
+                .andExpect(status().isBadRequest());
+        for (String identifier : new String[]{(username + "@example.com").toUpperCase(), " " + username + "@example.com "}) {
             mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", PASSWORD))))
                     .andExpect(status().isOk()).andExpect(header().exists("Set-Cookie"));
@@ -135,7 +141,7 @@ class AuthFlowIT {
         String username = username();
         JsonNode original = register(username);
         var result = mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
+                .content(json.writeValueAsBytes(Map.of("identifier", username + "@example.com", "password", PASSWORD))))
                 .andExpect(status().isOk()).andReturn().getResponse();
         JsonNode latest = cookieSession(result);
         refresh(original.path("refreshToken").asText(), 401);
@@ -151,11 +157,11 @@ class AuthFlowIT {
     void wrongPasswordAndUnknownUserReturnSameUnauthorizedShape() throws Exception {
         String username = username();
         register(username);
-        for (String identifier : new String[]{username, "unknown_" + username}) {
+        for (String identifier : new String[]{username + "@example.com", "unknown_" + username + "@example.com"}) {
             mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", "wrong-password"))))
                     .andExpect(status().isUnauthorized())
-                    .andExpect(jsonPath("$.detail").value("Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại."));
+                    .andExpect(jsonPath("$.detail").value("Email hoặc mật khẩu không đúng."));
         }
     }
 
@@ -229,7 +235,7 @@ class AuthFlowIT {
                 .andExpect(status().isUnauthorized());
         refresh(response.path("refreshToken").asText(), 401);
         mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
+                .content(json.writeValueAsBytes(Map.of("identifier", username + "@example.com", "password", PASSWORD))))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -328,7 +334,225 @@ class AuthFlowIT {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void pendingCookieIsRequiredAndCannotReplaceEitherSessionToken() throws Exception {
+        var pending = registerPending(username());
+        String token = pending.path("emailVerification").asText();
+        mvc.perform(get("/api/v1/auth/verification").cookie(new Cookie("emailVerification", token)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.resendAfter").value(org.hamcrest.Matchers.greaterThan(0)));
+        mvc.perform(get("/api/v1/auth/me").cookie(new Cookie("accessToken", token))).andExpect(status().isUnauthorized());
+        refresh(token, 401);
+        mvc.perform(post("/api/v1/auth/verification/confirm").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"otp\":\"123456\",\"email\":\"test@example.com\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/auth/logout").with(csrf()).cookie(new Cookie("emailVerification", token)))
+                .andExpect(status().isNoContent()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().maxAge("emailVerification", 0));
+    }
+
+    @Test
+    void unverifiedAccountsOfEveryRoleCannotUseLegacyAccessAndRefreshTokens() throws Exception {
+        for (String role : new String[] {"CUSTOMER", "STAFF", "ADMIN"}) {
+            JsonNode session = register(username());
+            UUID id = UUID.fromString(session.path("user").path("id").asText());
+            jdbc.update("UPDATE users SET role = ?, email_verified = false WHERE id = ?", role, id);
+            var response = mvc.perform(get("/api/v1/auth/me")
+                    .cookie(new Cookie("accessToken", session.path("accessToken").asText())))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().maxAge("accessToken", 0))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().httpOnly("emailVerification", true))
+                    .andReturn().getResponse();
+            assertThat(users.findById(id).orElseThrow().getRefreshToken()).isNull();
+            assertThat(users.findById(id).orElseThrow().isEmailVerified()).isFalse();
+            mvc.perform(get("/api/v1/cart").cookie(new Cookie("accessToken", session.path("accessToken").asText())))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+            mvc.perform(get("/api/v1/management/dashboard").cookie(new Cookie("accessToken", session.path("accessToken").asText())))
+                    .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+            mvc.perform(get("/api/v1/products").cookie(new Cookie("accessToken", session.path("accessToken").asText())))
+                    .andExpect(status().isOk());
+            assertThat(response.getCookie("emailVerification").getMaxAge()).isBetween(1, 900);
+        }
+    }
+
+    @Test
+    void refreshOfUnverifiedAccountCommitsRevocationAndClearsLoginCookies() throws Exception {
+        JsonNode session = register(username());
+        UUID id = UUID.fromString(session.path("user").path("id").asText());
+        jdbc.update("UPDATE users SET email_verified = false WHERE id = ?", id);
+        mvc.perform(post("/api/v1/auth/refresh").with(csrf())
+                .cookie(new Cookie("refreshToken", session.path("refreshToken").asText())))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().maxAge("accessToken", 0))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie().maxAge("refreshToken", 0));
+        assertThat(users.findById(id).orElseThrow().getRefreshToken()).isNull();
+    }
+
+    @Test
+    void verificationFailuresCommitAndResendResetsAttemptsWithoutAffectingPasswordReset() throws Exception {
+        String name = username();
+        JsonNode pending = registerPending(name);
+        String token = pending.path("emailVerification").asText();
+        var user = users.findByUsernameIgnoreCase(name).orElseThrow();
+        var otp = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(mail).sendEmailVerificationOtp(org.mockito.ArgumentMatchers.eq(user.getEmail()), otp.capture());
+        passwordReset.forgot(user.getEmail());
+        String resetHash = users.findById(user.getId()).orElseThrow().getPasswordResetHash();
+        String wrong = otp.getValue().equals("000000") ? "000001" : "000000";
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            assertThatThrownBy(() -> verification.confirm(token, wrong)).isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+            assertThat(users.findById(user.getId()).orElseThrow().getEmailVerificationAttempts()).isEqualTo(attempt);
+        }
+        assertThatThrownBy(() -> verification.confirm(token, otp.getValue())).isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+        assertThatThrownBy(() -> verification.resend(token)).isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+        jdbc.update("UPDATE users SET email_verification_expires_at = now() + interval '800 seconds' WHERE id = ?", user.getId());
+        verification.resend(token);
+        var updated = users.findById(user.getId()).orElseThrow();
+        assertThat(updated.getEmailVerificationAttempts()).isZero();
+        assertThat(updated.getEmailVerificationHash()).isNotNull();
+        assertThat(updated.getPasswordResetHash()).isEqualTo(resetHash);
+        assertThat(updated.isEmailVerified()).isFalse();
+    }
+
+    @Test
+    void concurrentConfirmationConsumesTheOtpExactlyOnce() throws Exception {
+        String name = username();
+        JsonNode pending = registerPending(name);
+        var otp = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(mail).sendEmailVerificationOtp(org.mockito.ArgumentMatchers.eq(name + "@example.com"), otp.capture());
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var task = (java.util.concurrent.Callable<Boolean>) () -> {
+                start.await();
+                try { verification.confirm(pending.path("emailVerification").asText(), otp.getValue()); return true; }
+                catch (BadCredentialsException exception) { return false; }
+            };
+            var first = pool.submit(task);
+            var second = pool.submit(task);
+            start.countDown();
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+        }
+        var verified = users.findByUsernameIgnoreCase(name).orElseThrow();
+        assertThat(verified.isEmailVerified()).isTrue();
+        assertThat(verified.getEmailVerificationHash()).isNull();
+    }
+
+    @Test
+    void concurrentRegistrationKeepsOneAccountAndNeverOverwritesCredentials() throws Exception {
+        String email = username() + "@example.com";
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var task = (java.util.concurrent.Callable<Integer>) () -> {
+                start.await();
+                return mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsBytes(Map.of("email", email.toUpperCase(), "password", PASSWORD))))
+                        .andReturn().getResponse().getStatus();
+            };
+            var first = pool.submit(task);
+            var second = pool.submit(task);
+            start.countDown();
+            assertThat(java.util.List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(201, 409);
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM users WHERE lower(email) = ?", Integer.class, email)).isEqualTo(1);
+        var user = users.findByEmailIgnoreCase(email).orElseThrow();
+        assertThat(passwords.matches(PASSWORD, user.getPassword())).isTrue();
+        assertThat(user.isEmailVerified()).isFalse();
+    }
+
+    @Test
+    void verificationMigrationPreservesExistingAccountsAndPasswordResetState() {
+        String schema = "verification_upgrade";
+        org.flywaydb.core.Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema).defaultSchema(schema).target("6").load().migrate();
+        jdbc.execute("INSERT INTO verification_upgrade.users (id, username, email, email_verified, password_reset_hash, password_reset_attempts) VALUES "
+                + "('10000000-0000-0000-0000-000000000001', 'legacy', 'legacy@example.invalid', false, 'reset-hash', 2), "
+                + "('10000000-0000-0000-0000-000000000002', 'verified', 'verified@example.invalid', true, NULL, 0)");
+        var upgrade = org.flywaydb.core.Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema).defaultSchema(schema).load();
+        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(jdbc.queryForList("SELECT email_verified FROM verification_upgrade.users ORDER BY username", Boolean.class))
+                .containsExactly(false, true);
+        assertThat(jdbc.queryForObject("SELECT password_reset_hash FROM verification_upgrade.users WHERE username = 'legacy'", String.class)).isEqualTo("reset-hash");
+        assertThat(jdbc.queryForObject("SELECT password_reset_attempts FROM verification_upgrade.users WHERE username = 'legacy'", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForList("SELECT email_verification_attempts FROM verification_upgrade.users", Integer.class)).containsOnly(0);
+        upgrade.validate();
+        assertThat(upgrade.migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    void failedRegistrationMailPreservesPendingAccountAndCanBeRetried() throws Exception {
+        String name = username();
+        org.mockito.Mockito.doThrow(new com.nutee.backend.auth.service.GmailService.DeliveryException())
+                .when(mail).sendEmailVerificationOtp(org.mockito.ArgumentMatchers.eq(name + "@example.com"), anyString());
+        JsonNode pending = registerPending(name);
+        assertThat(pending.path("verification").path("mailSent").asBoolean()).isFalse();
+        var user = users.findByUsernameIgnoreCase(name).orElseThrow();
+        assertThat(user.isEmailVerified()).isFalse();
+        assertThat(user.getRefreshToken()).isNull();
+        org.mockito.Mockito.doNothing().when(mail).sendEmailVerificationOtp(org.mockito.ArgumentMatchers.eq(user.getEmail()), anyString());
+        assertThat(verification.resend(pending.path("emailVerification").asText()).mailSent()).isTrue();
+    }
+
+    @Test
+    void concurrentResendsSendOnlyOneNewCode() throws Exception {
+        String name = username();
+        JsonNode pending = registerPending(name);
+        var user = users.findByUsernameIgnoreCase(name).orElseThrow();
+        jdbc.update("UPDATE users SET email_verification_expires_at = now() + interval '800 seconds' WHERE id = ?", user.getId());
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var task = (java.util.concurrent.Callable<Integer>) () -> {
+                start.await();
+                try { verification.resend(pending.path("emailVerification").asText()); return 200; }
+                catch (com.nutee.backend.common.exception.ApiException exception) { return exception.getStatus().value(); }
+            };
+            var first = pool.submit(task);
+            var second = pool.submit(task);
+            start.countDown();
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(200, 429);
+        }
+        org.mockito.Mockito.verify(mail, org.mockito.Mockito.times(2)).sendEmailVerificationOtp(
+                org.mockito.ArgumentMatchers.eq(user.getEmail()), anyString());
+    }
+
+    @Test
+    void passwordResetDoesNotVerifyEmailAndNeitherOtpWorksForTheOtherPurpose() throws Exception {
+        String name = username();
+        JsonNode pending = registerPending(name);
+        String token = pending.path("emailVerification").asText();
+        var user = users.findByUsernameIgnoreCase(name).orElseThrow();
+        var emailOtp = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(mail).sendEmailVerificationOtp(org.mockito.ArgumentMatchers.eq(user.getEmail()), emailOtp.capture());
+        passwordReset.forgot(user.getEmail());
+        var resetOtp = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(mail).sendPasswordResetOtp(org.mockito.ArgumentMatchers.eq(user.getEmail()), anyString(), resetOtp.capture());
+        // Hai mã ngẫu nhiên có thể trùng sáu chữ số; kiểm tra tách mục đích khi giá trị khác nhau.
+        if (!emailOtp.getValue().equals(resetOtp.getValue())) {
+            assertThatThrownBy(() -> verification.confirm(token, resetOtp.getValue())).isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+            assertThatThrownBy(() -> passwordReset.reset(user.getEmail(), emailOtp.getValue(), "ReplacementPassword123!"))
+                    .isInstanceOf(com.nutee.backend.common.exception.ApiException.class);
+        }
+        passwordReset.reset(user.getEmail(), resetOtp.getValue(), "ReplacementPassword123!");
+        assertThat(users.findById(user.getId()).orElseThrow().isEmailVerified()).isFalse();
+        var login = auth.login(new com.nutee.backend.auth.dto.LoginRequest(user.getEmail(), "ReplacementPassword123!"));
+        assertThat(login.verificationRequired()).isTrue();
+        assertThat(login.accessToken()).isNull();
+    }
+
     private JsonNode register(String username) throws Exception {
+        JsonNode pending = registerPending(username);
+        var otp = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(mail).sendEmailVerificationOtp(
+                org.mockito.ArgumentMatchers.eq(username + "@example.com"), otp.capture());
+        var response = mvc.perform(post("/api/v1/auth/verification/confirm").with(csrf())
+                .cookie(new Cookie("emailVerification", pending.path("emailVerification").asText()))
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsBytes(Map.of("otp", otp.getValue()))))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        return cookieSession(response);
+    }
+
+    private JsonNode registerPending(String username) throws Exception {
         var response = mvc.perform(post("/api/v1/auth/register").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("username", username, "email", username + "@example.com",
                         "password", PASSWORD, "role", "ADMIN"))))
@@ -356,7 +580,8 @@ class AuthFlowIT {
         var body = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(response.getContentAsString());
         assertThat(body.has("accessToken")).isFalse();
         assertThat(body.has("refreshToken")).isFalse();
-        for (String name : new String[]{"accessToken", "refreshToken"}) {
+        assertThat(body.has("verificationToken")).isFalse();
+        for (String name : new String[]{"accessToken", "refreshToken", "emailVerification"}) {
             Cookie cookie = response.getCookie(name);
             if (cookie != null && !cookie.getValue().isBlank()) {
                 assertThat(cookie.isHttpOnly()).isTrue();

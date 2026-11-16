@@ -46,7 +46,7 @@ class DiscountIT {
     Cookie customer;
 
     @BeforeEach void account() {
-        User user = users.saveAndFlush(User.create("admin_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "test-hash", "Admin", false, null));
+        User user = users.saveAndFlush(User.create("admin_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "test-hash", "Admin", true, null));
         jdbc.update("UPDATE users SET role = 'ADMIN' WHERE id = ?", user.getId());
         entityManager.clear();
         admin = cookie(user.getId()); customer = cookie(OWNER);
@@ -70,7 +70,7 @@ class DiscountIT {
                 .andExpect(status().isBadRequest());
         String subject = tokens.decodeAccess(admin.getValue()).getSubject();
         jdbc.update("UPDATE users SET is_active = false WHERE id = ?", UUID.fromString(subject)); entityManager.clear();
-        mvc.perform(get("/api/v1/management/promotions").cookie(admin)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/management/promotions").cookie(admin)).andExpect(status().isUnauthorized());
     }
 
     @Test void promotionCrudChangesEffectivePricesAndDatabasePriceFilteringWithoutChangingBasePrice() throws Exception {
@@ -133,7 +133,7 @@ class DiscountIT {
     }
 
     @Test void privateVoucherIsNotExposedOrAppliedForAnotherAccountAndRulesEnforceTimeAndMinimum() throws Exception {
-        User other = users.saveAndFlush(User.create("other", "other@example.invalid", "test-hash", "Other", false, null));
+        User other = users.saveAndFlush(User.create("other", "other@example.invalid", "test-hash", "Other", true, null));
         UUID id = create("vouchers", voucher("PRIVATE10", "user", List.of(other.getId())));
         cart.add(OWNER, 11, 1);
         mvc.perform(get("/api/v1/vouchers").cookie(customer)).andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());

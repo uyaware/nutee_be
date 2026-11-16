@@ -19,12 +19,12 @@ import org.springframework.web.bind.annotation.*;
 public class PasswordResetController {
     private final PasswordResetService passwords;
 
-    /** Yêu cầu gửi liên kết khôi phục; không tiết lộ email có tồn tại hay không. */
+    /** Chỉ trả thành công khi đã gửi mã; báo rõ email không tồn tại hoặc chỉ đăng nhập Google. */
     @PostMapping(value = "/forgot-password", consumes = "application/json")
     public ResponseEntity<Map<String, String>> forgot(@Valid @RequestBody ForgotPasswordRequest request) {
         passwords.forgot(request.email());
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Map.of("message",
-                "Nếu email có tài khoản phù hợp, bạn sẽ nhận được mã OTP 6 số để đặt lại mật khẩu."));
+                "Đã gửi mã OTP 6 số để đặt lại mật khẩu. Vui lòng kiểm tra email."));
     }
 
     @PostMapping(value = "/reset-password", consumes = "application/json")

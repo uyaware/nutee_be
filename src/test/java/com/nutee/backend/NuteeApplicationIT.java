@@ -62,7 +62,7 @@ class NuteeApplicationIT {
                 .containsExactlyInAnyOrder("User", "AuthProvider", "Brand", "Category", "Product",
                         "ProductVariant", "ProductImage", "VariantSpecification", "OrderItem",
                         "ProductReview", "ProductReviewHistory", "CartItem", "UserAddress", "Promotion", "Voucher", "Order", "TransactionLog", "AfterSaleRequest", "AfterSaleHistory");
-        assertThat(flyway.info().applied()).hasSize(6);
+        assertThat(flyway.info().applied()).hasSize(7);
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class);
         assertThat(tables).hasSize(24).contains("flyway_schema_history", "users", "auth_providers",

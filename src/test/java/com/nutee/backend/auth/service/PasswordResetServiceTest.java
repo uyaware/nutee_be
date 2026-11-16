@@ -25,7 +25,7 @@ class PasswordResetServiceTest {
     @BeforeEach
     void configure() {
         user = User.create("tester", "test@example.com", "old-hash", "Test", false, null);
-        when(users.findByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
+        when(users.findLockedByEmailIgnoreCase(user.getEmail())).thenReturn(Optional.of(user));
         when(users.findLockedById(user.getId())).thenReturn(Optional.of(user));
         when(users.findByPasswordResetHash(anyString())).thenAnswer(invocation ->
                 invocation.getArgument(0).equals(user.getPasswordResetHash()) ? Optional.of(user) : Optional.empty());
@@ -55,18 +55,19 @@ class PasswordResetServiceTest {
         assertThat(user.getRefreshToken()).isNull();
         assertThat(user.getPasswordResetHash()).isNull();
         assertThat(user.getPasswordResetExpiresAt()).isNull();
+        assertThat(user.isEmailVerified()).isFalse();
         assertThatThrownBy(() -> service.reset(user.getEmail(), token, "ReplacementPassword123!"))
                 .isInstanceOf(ApiException.class);
     }
 
     @Test
     void unknownAndGoogleOnlyAccountsDoNotSendMail() {
-        when(users.findByEmailIgnoreCase("unknown@example.com")).thenReturn(Optional.empty());
-        service.forgot("unknown@example.com");
+        when(users.findLockedByEmailIgnoreCase("unknown@example.com")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> service.forgot("unknown@example.com")).isInstanceOf(ApiException.class);
         User google = User.create("google", "google@example.com", null, null, true, null);
-        when(users.findByEmailIgnoreCase(google.getEmail())).thenReturn(Optional.of(google));
+        when(users.findLockedByEmailIgnoreCase(google.getEmail())).thenReturn(Optional.of(google));
         when(users.findLockedById(google.getId())).thenReturn(Optional.of(google));
-        service.forgot(google.getEmail());
+        assertThatThrownBy(() -> service.forgot(google.getEmail())).isInstanceOf(ApiException.class);
         verifyNoInteractions(mail);
     }
 
@@ -74,7 +75,7 @@ class PasswordResetServiceTest {
     void cooldownPreventsDuplicateEmailAndNewLinkInvalidatesOldLink() {
         service.forgot(user.getEmail());
         String oldHash = user.getPasswordResetHash();
-        service.forgot(user.getEmail());
+        assertThatThrownBy(() -> service.forgot(user.getEmail())).isInstanceOf(ApiException.class);
         verify(mail, times(1)).sendPasswordResetOtp(anyString(), anyString(), anyString());
         user.requestPasswordReset(oldHash, Instant.now().plusSeconds(800));
         service.forgot(user.getEmail());
@@ -104,9 +105,9 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void deliveryFailurePreservesPreviousLinkAndDoesNotExposeAccount() {
+    void deliveryFailureReportsErrorWithoutStoringUndeliveredCode() {
         doThrow(new GmailService.DeliveryException()).when(mail).sendPasswordResetOtp(anyString(), anyString(), anyString());
-        assertThatCode(() -> service.forgot(user.getEmail())).doesNotThrowAnyException();
+        assertThatThrownBy(() -> service.forgot(user.getEmail())).isInstanceOf(ApiException.class);
         assertThat(user.getPasswordResetHash()).isNull();
     }
     @Test

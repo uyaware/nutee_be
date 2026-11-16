@@ -4,6 +4,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import com.nutee.backend.auth.service.EmailVerificationService;
+import com.nutee.backend.user.repository.UserRepository;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -21,8 +24,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import java.util.List;
 import java.util.Arrays;
 import org.springframework.web.cors.CorsConfiguration;
@@ -31,6 +32,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /** Cấu hình bảo mật HTTP: cookie JWT, CSRF, phân quyền và CORS. */
 @Configuration(proxyBeanMethods = false)
+@Import(JwtCookies.class)
 @EnableMethodSecurity
 @EnableConfigurationProperties({JwtProperties.class, GoogleProperties.class, CookieProperties.class})
 public class SecurityConfiguration {
@@ -39,6 +41,7 @@ public class SecurityConfiguration {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             SecurityErrorHandler errors, JwtDecoder decoder, CsrfTokenRepository csrfTokens,
+            UserRepository users, EmailVerificationService verification, JwtCookies cookies,
             @Value("${app.docs-enabled:false}") boolean docsEnabled)
             throws Exception {
         http
@@ -60,8 +63,10 @@ public class SecurityConfiguration {
                     authorize.requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login",
                             "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/google",
                             "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",
+                            "/api/v1/auth/verification/resend", "/api/v1/auth/verification/confirm",
                             "/api/v1/auth/social/*").permitAll();
                     authorize.requestMatchers(HttpMethod.GET, "/api/v1/auth/google/nonce", "/api/v1/auth/csrf",
+                            "/api/v1/auth/verification",
                             "/api/v1/auth/social/*/nonce").permitAll();
                     authorize.requestMatchers(HttpMethod.GET,
                             "/api/v1/actuator/health", "/api/v1/actuator/health/liveness",
@@ -73,13 +78,8 @@ public class SecurityConfiguration {
                     }
                     authorize.anyRequest().authenticated();
                 });
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            String role = jwt.getClaimAsString("role");
-            return role == null ? List.of() : List.of(new SimpleGrantedAuthority("ROLE_" + role));
-        });
         // JWT được gửi trong cookie nên vẫn phải kiểm tra CSRF cho request ghi dữ liệu.
-        http.addFilterBefore(new JwtAuthenticationFilter(decoder, converter, errors),
+        http.addFilterBefore(new JwtAuthenticationFilter(decoder, users, verification, cookies, errors),
                 UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

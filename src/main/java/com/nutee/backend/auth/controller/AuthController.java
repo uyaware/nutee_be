@@ -38,17 +38,17 @@ public class AuthController {
                 .body(Map.of("token", csrf.getToken(), "headerName", csrf.getHeaderName()));
     }
 
-    /** Đăng ký tài khoản và đặt cookie đăng nhập; JSON tự ẩn hai JWT. */
+    /** Đăng ký và đặt cookie chờ xác thực; chưa cấp access/refresh token. */
     @PostMapping("/register")
     @SecurityRequirements
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest body,
             HttpServletRequest request, HttpServletResponse response) {
         AuthResponse session = auth.register(body);
         cookies.login(request, response, session);
-        return ResponseEntity.created(URI.create("/api/v1/auth/me")).cacheControl(CacheControl.noStore()).body(session);
+        return ResponseEntity.created(URI.create("/api/v1/auth/verification")).cacheControl(CacheControl.noStore()).body(session);
     }
 
-    /** Đăng nhập bằng email/username và áp dụng lựa chọn ghi nhớ đăng nhập. */
+    /** Đăng nhập bằng email hoặc chuyển sang chờ xác thực sau khi kiểm tra mật khẩu. */
     @PostMapping("/login")
     @SecurityRequirements
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest body,
@@ -69,7 +69,7 @@ public class AuthController {
             cookies.issue(response, session);
             return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(session);
         } catch (BadCredentialsException exception) {
-            cookies.clear(request, response);
+            cookies.clearLogin(request, response);
             throw exception;
         }
     }

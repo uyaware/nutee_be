@@ -34,6 +34,7 @@ public class HmacTokenService {
     private final byte[] refreshKey;
     private final JwtDecoder accessDecoder;
     private final JwtDecoder refreshDecoder;
+    private final JwtDecoder verificationDecoder;
 
     /** Khởi tạo hai bộ giải mã, mỗi bộ chỉ chấp nhận đúng khóa và loại token của mình. */
     public HmacTokenService(JwtProperties properties) {
@@ -45,15 +46,19 @@ public class HmacTokenService {
         refreshKey = Base64.getDecoder().decode(properties.refreshSecret());
         accessDecoder = decoder(accessKey, "access");
         refreshDecoder = decoder(refreshKey, "refresh");
+        verificationDecoder = decoder(refreshKey, "email_verification");
     }
 
-    /** Tạo cặp token mới khi người dùng đăng nhập hoặc đăng ký. */
+    /** Chỉ tạo phiên đầy đủ cho tài khoản đang hoạt động và đã xác thực email. */
     public AuthResponse issue(User user) {
         return issue(user, Instant.now().plus(properties.refreshTokenTtl()));
     }
 
     /** Xoay cặp token nhưng giữ nguyên hạn cuối của phiên refresh ban đầu. */
     public AuthResponse issue(User user, Instant refreshExpiresAt) {
+        if (!user.isActive() || !user.isEmailVerified()) {
+            throw new EmailNotVerifiedException();
+        }
         Instant now = Instant.now();
         Instant accessExpiresAt = now.plus(properties.accessTokenTtl());
         if (accessExpiresAt.isAfter(refreshExpiresAt)) {
@@ -74,6 +79,16 @@ public class HmacTokenService {
         return refreshDecoder.decode(token);
     }
 
+    /** Cấp mã có mục đích riêng, không được decoder access/refresh chấp nhận. */
+    public String issueVerification(User user) {
+        Instant now = Instant.now();
+        return sign(user, "email_verification", now, now.plusSeconds(900), refreshKey);
+    }
+
+    public Jwt decodeVerification(String token) {
+        return verificationDecoder.decode(token);
+    }
+
     private String sign(User user, String kind, Instant now, Instant expiresAt, byte[] key) {
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder().subject(user.getId().toString())
                 .jwtID(UUID.randomUUID().toString()).issueTime(Date.from(now))
@@ -81,6 +96,7 @@ public class HmacTokenService {
                 .claim("email", user.getEmail()).claim("token_type", kind);
         if ("access".equals(kind)) {
             claims.claim("role", user.getRole());
+            claims.claim("email_verified", user.isEmailVerified());
         }
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256)
                 .type(JOSEObjectType.JWT).build(), claims.build());

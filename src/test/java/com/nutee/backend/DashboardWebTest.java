@@ -23,13 +23,21 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfiguration.class, SecurityErrorHandler.class, GlobalExceptionHandler.class})
 @ActiveProfiles("test")
 class DashboardWebTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.user.repository.UserRepository accountUsers;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.auth.service.EmailVerificationService emailVerification;
+
     @Autowired private MockMvc mvc;
     @MockitoBean private JwtDecoder decoder;
     @MockitoBean private DashboardService service;
     @MockitoBean(name = "managementAccess") private ManagementAccess access;
     private Cookie login(String role) {
+        var account = com.nutee.backend.user.entity.User.create("tester", "test@example.com", "hash", "Test", true, null);
+        account.updateAccess(role, true);
+        when(accountUsers.findById(account.getId())).thenReturn(java.util.Optional.of(account));
         when(decoder.decode("dashboard-test")).thenReturn(Jwt.withTokenValue("dashboard-test").header("alg", "HS256")
-                .subject(UUID.randomUUID().toString()).claim("role", role).build());
+                .subject(account.getId().toString()).claim("role", role).build());
         return new Cookie("accessToken", "dashboard-test");
     }
     @Test void onlyActiveAdminCanReadFinancialDashboard() throws Exception {

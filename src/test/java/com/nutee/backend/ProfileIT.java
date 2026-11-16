@@ -58,7 +58,7 @@ class ProfileIT {
     @BeforeEach
     void account() {
         owner = users.saveAndFlush(User.create("profile_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid",
-                "test-hash", null, false, null));
+                "test-hash", null, true, null));
         cookie = new Cookie("accessToken", tokens.issue(owner).accessToken());
     }
 
@@ -113,7 +113,7 @@ class ProfileIT {
     void validatesFieldsChecksCsrfAndRejectsCrossAccountAccess() throws Exception {
         int id = addAddress(false);
         User other = users.saveAndFlush(User.create("other_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid",
-                "test-hash", "Other", false, null));
+                "test-hash", "Other", true, null));
         Cookie otherCookie = new Cookie("accessToken", tokens.issue(other).accessToken());
         mvc.perform(get("/api/v1/account/profile")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/account/addresses").cookie(cookie).contentType(MediaType.APPLICATION_JSON)

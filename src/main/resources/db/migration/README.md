@@ -10,6 +10,9 @@ local NUTEE database. This chain is for an empty database, not an in-place upgra
    transfers old event records to `transaction_logs`, and removes `payment_events`.
 5. `V5__allow_system_order_history.sql`: allows a null actor on system-generated
    order history entries, without changing existing records.
+6. `V6__password_reset_attempts.sql`: limits failed password reset attempts to five.
+7. `V7__email_verification_otp.sql`: adds independent email verification hash, expiry,
+   and attempt counter. It preserves every account and existing `email_verified` value.
 The current schema has 23 domain tables. `orders` is the only payment state;
 `transaction_logs` records each verified webhook delivery, including duplicates.
 Legacy session rows are retained with `status=legacy_session`; old event payloads

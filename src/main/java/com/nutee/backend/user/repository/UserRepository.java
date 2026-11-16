@@ -20,6 +20,10 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<User> findLockedById(UUID id);
 
+    /** Khóa ngay lần đọc đầu để không dùng entity cũ khi hai yêu cầu OTP hoặc đăng nhập chạy đồng thời. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<User> findLockedByEmailIgnoreCase(String email);
+
     /** Khóa tất cả admin theo cùng thứ tự để ngăn hạ quyền admin cuối cùng đồng thời. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.role = 'ADMIN' and u.active = true order by u.id")

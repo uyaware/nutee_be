@@ -11,6 +11,9 @@ public record RegisterRequest(
         @NotBlank @Email @Size(max = 255) String email,
         @NotBlank @Size(min = 8, max = 100) @Pattern(regexp = "[\\x20-\\x7E]*", message = "Password must contain only ASCII characters.") String password,
         @Size(max = 100) String fullName) {
+    public RegisterRequest {
+        if (email != null) email = email.strip();
+    }
     /** Che mật khẩu để không lộ thông tin đăng ký trong log. */
     @Override
     public String toString() {

@@ -50,7 +50,7 @@ class ManagementProductAndUserIT {
         admin = cookie(adminUser); staff = cookie(staffUser); customer = cookie(customerUser);
     }
     private User account(String role) {
-        User user = users.saveAndFlush(User.create("u_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "User", false, null));
+        User user = users.saveAndFlush(User.create("u_" + UUID.randomUUID(), UUID.randomUUID() + "@example.invalid", "hash", "User", true, null));
         jdbc.update("update users set role = ? where id = ?", role, user.getId());
         entityManager.clear();
         return users.findById(user.getId()).orElseThrow();
@@ -95,6 +95,6 @@ class ManagementProductAndUserIT {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("customer"));
         entityManager.flush(); entityManager.clear();
         assertThat(users.findById(staffUser.getId()).orElseThrow().isActive()).isFalse();
-        mvc.perform(get("/api/v1/management/products").cookie(staff)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/management/products").cookie(staff)).andExpect(status().isUnauthorized());
     }
 }

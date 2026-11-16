@@ -1,6 +1,6 @@
 -- Synthetic integration-test fixtures only; never loaded into the application database.
-INSERT INTO users (id, username, email, full_name)
-VALUES ('00000000-0000-0000-0000-000000000001', 'catalog-reviewer', 'reviewer@example.invalid', 'Test reviewer');
+INSERT INTO users (id, username, email, full_name, email_verified)
+VALUES ('00000000-0000-0000-0000-000000000001', 'catalog-reviewer', 'reviewer@example.invalid', 'Test reviewer', true);
 INSERT INTO brands (id, name) VALUES (1, 'ExampleTech'), (2, 'KeyWorks');
 INSERT INTO categories (id, parent, name) VALUES
     (100, NULL, 'Electronics'), (101, 100, 'Laptops'), (102, 100, 'Phones'), (103, 100, 'Keyboards');

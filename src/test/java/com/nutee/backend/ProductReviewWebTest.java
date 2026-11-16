@@ -26,11 +26,18 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfiguration.class, SecurityErrorHandler.class, GlobalExceptionHandler.class})
 @ActiveProfiles("test")
 class ProductReviewWebTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.user.repository.UserRepository accountUsers;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.nutee.backend.auth.service.EmailVerificationService emailVerification;
+
     @Autowired private MockMvc mvc;
     @MockitoBean private JwtDecoder decoder;
     @MockitoBean private ProductReviewService service;
     private final UUID owner = UUID.randomUUID();
     private Cookie login() {
+        var account = com.nutee.backend.user.entity.User.create("tester", "test@example.com", "hash", "Test", true, null);
+        when(accountUsers.findById(owner)).thenReturn(java.util.Optional.of(account));
         when(decoder.decode("review-test")).thenReturn(Jwt.withTokenValue("review-test").header("alg", "HS256")
                 .subject(owner.toString()).claim("role", "CUSTOMER").build());
         return new Cookie("accessToken", "review-test");

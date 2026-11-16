@@ -1,6 +1,7 @@
 package com.nutee.backend.common.exception;
 
 import com.nutee.backend.common.response.ApiProblems;
+import com.nutee.backend.security.EmailNotVerifiedException;
 import com.nutee.backend.common.response.ValidationError;
 import jakarta.validation.ConstraintViolationException;
 import java.util.ArrayList;
@@ -39,6 +40,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     /** Đổi lỗi ràng buộc dữ liệu thành 409 mà không lộ câu SQL. */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Object> handleConflict(DataIntegrityViolationException exception, WebRequest request) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof org.hibernate.exception.ConstraintViolationException violation
+                    && "uk_users_email_ci".equals(violation.getConstraintName())) {
+                ProblemDetail duplicateEmail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+                        "Email đã tồn tại. Vui lòng đăng nhập hoặc khôi phục mật khẩu.");
+                return handleExceptionInternal(exception, duplicateEmail, new HttpHeaders(), HttpStatus.CONFLICT, request);
+            }
+            cause = cause.getCause();
+        }
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
                 "Thông tin bị trùng hoặc xung đột với dữ liệu hiện có.");
         return handleExceptionInternal(exception, problem, new HttpHeaders(), HttpStatus.CONFLICT, request);
@@ -113,11 +124,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         String path = servletRequest.getRequestURI().substring(servletRequest.getContextPath().length());
         String message = "Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.";
         String code = "SESSION_EXPIRED";
-        if (exception instanceof DisabledException) {
+        if (exception instanceof EmailNotVerifiedException) {
+            message = exception.getMessage();
+            code = "EMAIL_NOT_VERIFIED";
+        } else if (exception instanceof DisabledException) {
             message = "Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.";
             code = "ACCOUNT_DISABLED";
         } else if (path.equals("/api/v1/auth/login")) {
-            message = "Email/tên đăng nhập hoặc mật khẩu không đúng.";
+            message = "Email hoặc mật khẩu không đúng.";
             code = "INVALID_CREDENTIALS";
         } else if (path.equals("/api/v1/auth/google") || path.startsWith("/api/v1/auth/social/")
                 || path.startsWith("/api/v1/auth/google/")) {
