@@ -12,6 +12,7 @@ import com.nutee.backend.user.entity.User;
 import com.nutee.backend.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.Cookie;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class ManagementProductAndUserIT {
     @Autowired EntityManager entityManager;
     User adminUser;
     User staffUser;
+    User customerUser;
     Cookie admin;
     Cookie staff;
     Cookie customer;
@@ -46,7 +48,7 @@ class ManagementProductAndUserIT {
     @BeforeEach void setup() {
         adminUser = account("ADMIN");
         staffUser = account("STAFF");
-        User customerUser = account("CUSTOMER");
+        customerUser = account("CUSTOMER");
         admin = cookie(adminUser); staff = cookie(staffUser); customer = cookie(customerUser);
     }
     private User account(String role) {
@@ -127,17 +129,45 @@ class ManagementProductAndUserIT {
                 .andExpect(jsonPath("$.images[1].primary").value(true));
     }
 
-    @Test void onlyAdminCanManageUsersAndCannotModifyOwnAccess() throws Exception {
+    @Test void adminManagesStaffAndAdminsButNotCustomers() throws Exception {
         String path = "/api/v1/management/users";
         mvc.perform(get(path).cookie(staff)).andExpect(status().isForbidden());
-        mvc.perform(get(path).cookie(admin)).andExpect(status().isOk());
-        String body = "{\"role\":\"customer\",\"isActive\":false}";
+        mvc.perform(get(path).cookie(admin)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].id", org.hamcrest.Matchers.hasItem(staffUser.getId().toString())))
+                .andExpect(jsonPath("$.content[*].id", org.hamcrest.Matchers.hasItem(adminUser.getId().toString())))
+                .andExpect(jsonPath("$.content[*].id", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem(customerUser.getId().toString()))));
+        mvc.perform(get(path + "/" + customerUser.getId()).cookie(admin)).andExpect(status().isNotFound());
+        mvc.perform(get(path).param("role", "customer").cookie(admin)).andExpect(status().isBadRequest());
+        String body = "{\"role\":\"staff\",\"isActive\":false}";
         mvc.perform(put(path + "/" + adminUser.getId() + "/access").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden());
+        mvc.perform(put(path + "/" + customerUser.getId() + "/access").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isNotFound());
+        mvc.perform(put(path + "/" + staffUser.getId() + "/access").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"customer\",\"isActive\":true}"))
+                .andExpect(status().isForbidden());
         mvc.perform(put(path + "/" + staffUser.getId() + "/access").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("customer"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("staff"));
         entityManager.flush(); entityManager.clear();
         assertThat(users.findById(staffUser.getId()).orElseThrow().isActive()).isFalse();
         mvc.perform(get("/api/v1/management/products").cookie(staff)).andExpect(status().isUnauthorized());
+    }
+
+    @Test void adminCanCreateOnlyStaffOrAdminAccounts() throws Exception {
+        String path = "/api/v1/management/users";
+        for (String role : new String[] {"staff", "admin", "customer"}) {
+            String body = json.writeValueAsString(Map.of("email", UUID.randomUUID() + "@example.invalid",
+                    "name", "New account", "password", "Password123!", "role", role));
+            mvc.perform(post(path).cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(role.equals("customer") ? status().isBadRequest() : status().isCreated());
+        }
+    }
+
+    @Test void adminCanPromoteAndManageAnotherAdmin() throws Exception {
+        String path = "/api/v1/management/users/" + staffUser.getId();
+        mvc.perform(put(path + "/access").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"role\":\"admin\",\"isActive\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("admin"));
+        mvc.perform(get(path).cookie(admin)).andExpect(status().isOk()).andExpect(jsonPath("$.role").value("admin"));
     }
 }

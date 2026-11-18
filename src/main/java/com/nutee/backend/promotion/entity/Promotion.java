@@ -37,7 +37,7 @@ public class Promotion {
     public void update(PromotionRequest request) {
         Discounts.validate(request.type(), request.value(), request.startsAt(), request.endsAt());
         code = request.code(); type = request.type(); value = request.value();
-        scope = "product"; active = request.isActive(); startsAt = request.startsAt(); endsAt = request.endsAt();
+        scope = request.scope(); active = request.isActive(); startsAt = request.startsAt(); endsAt = request.endsAt();
     }
 
     public void setActive(boolean enabled) { active = enabled; }
@@ -45,7 +45,7 @@ public class Promotion {
     /** Tính giá hiện tại theo VND, bỏ qua rule legacy thiếu dữ liệu hoặc chưa có hiệu lực. */
     public int price(int original, Instant now) {
         if (value == null || value < 1 || ("percent".equals(type) && value > 100)
-                || !"product".equals(scope) || !"active".equals(Discounts.status(active, startsAt, endsAt, now))) return original;
+                || !("product".equals(scope) || "all".equals(scope)) || !"active".equals(Discounts.status(active, startsAt, endsAt, now))) return original;
         return Math.toIntExact(Math.max(0, original - Discounts.amount(original, type, value)));
     }
 }

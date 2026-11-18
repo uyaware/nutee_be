@@ -5,6 +5,10 @@ import com.nutee.backend.common.exception.ApiException;
 import com.nutee.backend.common.response.PageResponse;
 import com.nutee.backend.product.entity.Product;
 import com.nutee.backend.product.repository.ProductRepository;
+import com.nutee.backend.product.image.entity.ProductImage;
+import com.nutee.backend.product.image.repository.ProductImageRepository;
+import com.nutee.backend.product.variant.entity.ProductVariant;
+import com.nutee.backend.product.variant.repository.ProductVariantRepository;
 import com.nutee.backend.promotion.dto.PromotionRequest;
 import com.nutee.backend.promotion.dto.PromotionResponse;
 import com.nutee.backend.promotion.dto.PromotionResponse.ProductOption;
@@ -25,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PromotionService {
     private final PromotionRepository rules;
     private final ProductRepository products;
+    private final ProductImageRepository images;
+    private final ProductVariantRepository variants;
 
     public PageResponse<PromotionResponse> list(String q, String status, int page, int size) {
         var result = rules.findAll(DiscountFilters.matching(q, status), PageRequest.of(page, size, Sort.by("code", "id")));
@@ -39,13 +45,14 @@ public class PromotionService {
         String text = q.strip().toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
         var result = products.findAll((root, query, cb) -> cb.like(cb.lower(root.get("name")), "%" + text + "%", '\\'),
                 PageRequest.of(page, size, Sort.by("id")));
-        return PageResponse.from(result.map(product -> new ProductOption(product.getId(), product.getName())));
+        var details = productOptions(result.getContent());
+        return PageResponse.from(result.map(product -> details.get(product.getId())));
     }
 
     @Transactional
     public PromotionResponse create(PromotionRequest request) {
         Promotion rule = rules.saveAndFlush(new Promotion(request));
-        assign(rule, request.productIds());
+        assign(rule, requestedProducts(request));
         return response(rule);
     }
 
@@ -53,7 +60,7 @@ public class PromotionService {
     public PromotionResponse update(UUID id, PromotionRequest request) {
         Promotion rule = locked(id);
         rule.update(request);
-        assign(rule, request.productIds());
+        assign(rule, requestedProducts(request));
         return response(rule);
     }
 
@@ -80,10 +87,18 @@ public class PromotionService {
         if (rows.size() != all.size()) throw new ApiException(HttpStatus.BAD_REQUEST, "Có sản phẩm không tồn tại.");
         for (var product : rows) {
             if (ids.contains(product.getId()) && product.getPromotion() != null && !product.getPromotion().getId().equals(rule.getId()))
-                throw new ApiException(HttpStatus.CONFLICT, "Sản phẩm đã thuộc promotion khác. Hãy gỡ liên kết cũ trước.");
+                throw new ApiException(HttpStatus.CONFLICT, "Sản phẩm " + product.getName() + " (#" + product.getId() + ") đã thuộc promotion " + product.getPromotion().getCode() + ". Hãy gỡ liên kết cũ trước.");
+        }
+        for (var product : rows) {
             product.assignPromotion(ids.contains(product.getId()) ? rule : null);
         }
         products.flush(); rules.flush();
+    }
+
+    private List<Integer> requestedProducts(PromotionRequest request) {
+        return "all".equals(request.scope())
+                ? products.findAllProductIds()
+                : request.productIds();
     }
 
     private Promotion require(UUID id) { return rules.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Không tìm thấy promotion.")); }
@@ -91,7 +106,27 @@ public class PromotionService {
     private PromotionResponse response(Promotion rule) { return PromotionResponse.from(rule, groupedProducts(List.of(rule.getId())).getOrDefault(rule.getId(), List.of())); }
     private Map<UUID, List<ProductOption>> groupedProducts(List<UUID> ids) {
         if (ids.isEmpty()) return Map.of();
-        return products.findByPromotion_IdIn(ids).stream().sorted(Comparator.comparing(Product::getId)).collect(Collectors.groupingBy(
-                product -> product.getPromotion().getId(), Collectors.mapping(product -> new ProductOption(product.getId(), product.getName()), Collectors.toList())));
+        var rows = products.findByPromotion_IdIn(ids).stream().sorted(Comparator.comparing(Product::getId)).toList();
+        var options = productOptions(rows);
+        return rows.stream().collect(Collectors.groupingBy(product -> product.getPromotion().getId(),
+                Collectors.mapping(product -> options.get(product.getId()), Collectors.toList())));
+    }
+
+    private Map<Integer, ProductOption> productOptions(List<Product> rows) {
+        if (rows.isEmpty()) return Map.of();
+        var ids = rows.stream().map(Product::getId).toList();
+        var related = products.findDistinctByIdIn(ids).stream().collect(Collectors.toMap(Product::getId, product -> product));
+        var groupedImages = images.findByProduct_IdIn(ids, Sort.by(Sort.Order.desc("primaryImage"), Sort.Order.asc("id")))
+                .stream().collect(Collectors.groupingBy(image -> image.getProduct().getId()));
+        var groupedVariants = variants.findByProduct_IdInAndPriceGreaterThanEqualAndQuantityGreaterThanEqual(ids, 0, 0, Sort.by("id"))
+                .stream().collect(Collectors.groupingBy(variant -> variant.getProduct().getId()));
+        return rows.stream().collect(Collectors.toMap(Product::getId, product -> {
+            var prices = groupedVariants.getOrDefault(product.getId(), List.of()).stream().map(ProductVariant::getPrice).toList();
+            var image = groupedImages.getOrDefault(product.getId(), List.of()).stream().findFirst().map(ProductImage::getImageUrl).orElse(null);
+            var promotion = related.get(product.getId()).getPromotion();
+            return new ProductOption(product.getId(), product.getName(), Boolean.TRUE.equals(product.getPublished()), image,
+                    prices.stream().min(Integer::compareTo).orElse(null), prices.stream().max(Integer::compareTo).orElse(null),
+                    promotion == null ? null : promotion.getId(), promotion == null ? null : promotion.getCode());
+        }));
     }
 }

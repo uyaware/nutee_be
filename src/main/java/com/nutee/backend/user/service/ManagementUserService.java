@@ -26,6 +26,9 @@ public class ManagementUserService {
 
     @Transactional
     public ManagementUserResponse create(ManagementUserCreateRequest request) {
+        if (!"staff".equals(request.role()) && !"admin".equals(request.role())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Chỉ được tạo tài khoản nhân viên hoặc quản trị viên.");
+        }
         String email = request.email().strip().toLowerCase(Locale.ROOT);
         if (users.existsByEmailIgnoreCase(email)) throw new ApiException(HttpStatus.CONFLICT, "Email đã được sử dụng.");
         User user = User.create("user_" + UUID.randomUUID().toString().replace("-", ""), email,
@@ -36,14 +39,14 @@ public class ManagementUserService {
 
     @Transactional(readOnly = true)
     public PageResponse<ManagementUserResponse> list(String q, String role, String status, int page, int size) {
-        if (!role.matches("all|customer|staff|admin") || !status.matches("all|active|locked")) {
+        if (!role.matches("all|staff|admin") || !status.matches("all|active|locked")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Bộ lọc không hợp lệ.");
         }
         String search = "%" + q.strip().toLowerCase(Locale.ROOT) + "%";
         Specification<User> spec = (root, query, cb) -> cb.and(
                 cb.or(cb.like(cb.lower(root.get("email")), search), cb.like(cb.lower(root.get("fullName")), search),
                         cb.like(root.get("phone"), search)),
-                role.equals("all") ? cb.conjunction() : cb.equal(root.get("role"), role.toUpperCase(Locale.ROOT)),
+                role.equals("all") ? root.get("role").in("STAFF", "ADMIN") : cb.equal(root.get("role"), role.toUpperCase(Locale.ROOT)),
                 status.equals("all") ? cb.conjunction() : cb.equal(root.get("active"), status.equals("active")));
         return PageResponse.from(users.findAll(spec, PageRequest.of(page, size, Sort.by("createdAt").descending().and(Sort.by("id"))))
                 .map(ManagementUserResponse::from));
@@ -51,7 +54,7 @@ public class ManagementUserService {
 
     @Transactional(readOnly = true)
     public ManagementUserResponse get(UUID id) {
-        return ManagementUserResponse.from(users.findById(id).orElseThrow(ManagementUserService::notFound));
+        return ManagementUserResponse.from(users.findById(id).filter(user -> "STAFF".equals(user.getRole()) || "ADMIN".equals(user.getRole())).orElseThrow(ManagementUserService::notFound));
     }
 
     @Transactional
@@ -59,6 +62,8 @@ public class ManagementUserService {
         if (actor.equals(id)) throw new ApiException(HttpStatus.FORBIDDEN, "Không thể thay đổi tài khoản đang đăng nhập.");
         var admins = users.findActiveAdminsLocked();
         User user = users.findLockedById(id).orElseThrow(ManagementUserService::notFound);
+        if (!"STAFF".equals(user.getRole()) && !"ADMIN".equals(user.getRole())) throw notFound();
+        if ("customer".equals(request.role())) throw new ApiException(HttpStatus.FORBIDDEN, "Chỉ được quản lý tài khoản nhân viên và quản trị viên.");
         if (user.isActive() && user.getRole().equals("ADMIN") && admins.size() <= 1
                 && (!request.isActive() || !request.role().equals("admin"))) {
             throw new ApiException(HttpStatus.CONFLICT, "Phải giữ ít nhất một quản trị viên đang hoạt động.");

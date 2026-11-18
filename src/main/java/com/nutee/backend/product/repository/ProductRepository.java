@@ -30,6 +30,8 @@ public interface ProductRepository extends JpaRepository<Product, Integer>, JpaS
     long countByBrand_Id(Integer brandId);
     long countByCategories_Id(Integer categoryId);
     Page<Product> findByNameContainingIgnoreCase(String name, Pageable pageable);
+    @org.springframework.data.jpa.repository.Query("select p.id from Product p order by p.id")
+    List<Integer> findAllProductIds();
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Product> findLockedById(Integer id);
     /** Fetch quan hệ cho các ID đã phân trang; không fetch collection trong query phân trang. */

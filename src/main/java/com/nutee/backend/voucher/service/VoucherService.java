@@ -43,9 +43,9 @@ public class VoucherService {
         if (q.length() > 100) throw new ApiException(HttpStatus.BAD_REQUEST, "Từ khóa quá dài.");
         String text = q.strip().toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
         var result = users.findAll((root, query, cb) -> cb.and(cb.equal(root.get("role"), "CUSTOMER"), cb.isTrue(root.get("active")),
-                cb.or(cb.like(cb.lower(root.get("email")), "%" + text + "%", '\\'), cb.like(cb.lower(root.get("fullName")), "%" + text + "%", '\\'))),
+                cb.or(cb.like(cb.lower(root.get("email")), "%" + text + "%", '\\'), cb.like(cb.lower(root.get("fullName")), "%" + text + "%", '\\'), cb.like(cb.lower(root.get("username")), "%" + text + "%", '\\'))),
                 PageRequest.of(page, size, Sort.by("email", "id")));
-        return PageResponse.from(result.map(user -> new VoucherResponse.CustomerOption(user.getId(), user.getFullName() == null ? user.getUsername() : user.getFullName(), user.getEmail())));
+        return PageResponse.from(result.map(VoucherResponse.CustomerOption::from));
     }
 
     @Transactional public VoucherResponse create(VoucherRequest request) { return VoucherResponse.from(vouchers.saveAndFlush(new Voucher(request, recipients(request)))); }

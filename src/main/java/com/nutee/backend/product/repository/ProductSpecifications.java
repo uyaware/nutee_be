@@ -142,7 +142,7 @@ public final class ProductSpecifications {
         Expression<Integer> original = originalPrice(root, query, cb);
         var promotion = root.join("promotion", JoinType.LEFT);
         var now = java.time.Instant.now();
-        var eligible = cb.and(cb.isTrue(promotion.get("active")), cb.equal(promotion.get("scope"), "product"),
+        var eligible = cb.and(cb.isTrue(promotion.get("active")), promotion.get("scope").in("product", "all"),
                 cb.lessThanOrEqualTo(promotion.get("startsAt"), now), cb.greaterThan(promotion.get("endsAt"), now),
                 cb.ge(promotion.get("value"), 1), cb.or(cb.equal(promotion.get("type"), "fixed"),
                         cb.and(cb.equal(promotion.get("type"), "percent"), cb.le(promotion.get("value"), 100))));

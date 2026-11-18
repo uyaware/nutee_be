@@ -93,6 +93,46 @@ class DiscountIT {
         mvc.perform(get("/api/v1/products/1")).andExpect(jsonPath("$.price").value(10000000));
     }
 
+    @Test void allScopeCapturesCurrentProductsAndUpdatesPricesWithoutIncludingLaterProducts() throws Exception {
+        var all = promotion("ALL10", 10);
+        all.put("scope", "all");
+        all.put("productIds", List.of());
+        UUID id = create("promotions", all);
+        mvc.perform(get("/api/v1/management/promotions/" + id).cookie(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.scope").value("all"))
+                .andExpect(jsonPath("$.productIds.length()").value(5));
+        mvc.perform(get("/api/v1/products/1")).andExpect(jsonPath("$.price").value(9000000));
+        mvc.perform(get("/api/v1/products?minPrice=9000000&maxPrice=9000000"))
+                .andExpect(jsonPath("$.totalElements").value(1));
+        jdbc.update("insert into products (id, name, is_published) values (6, 'Added later', true)");
+        assertThat(jdbc.queryForObject("select promotion_id from products where id = 6", UUID.class)).isNull();
+    }
+
+    @Test void productsExposeImagesPricesAndExistingPromotionAndRejectConflictingAllScope() throws Exception {
+        UUID existing = create("promotions", promotion("EXISTING", 10));
+        mvc.perform(get("/api/v1/management/promotions/products").param("q", "Test laptop").cookie(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(1))
+                .andExpect(jsonPath("$.content[0].imageUrl").value("/test-laptop.svg"))
+                .andExpect(jsonPath("$.content[0].minPrice").value(10000000))
+                .andExpect(jsonPath("$.content[0].maxPrice").value(12000000))
+                .andExpect(jsonPath("$.content[0].promotionId").value(existing.toString()))
+                .andExpect(jsonPath("$.content[0].promotionCode").value("EXISTING"));
+        var all = promotion("ALL20", 20);
+        all.put("scope", "all");
+        all.put("productIds", List.of());
+        mvc.perform(post("/api/v1/management/promotions").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(all))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("EXISTING")));
+    }
+
+    @Test void specificPromotionCannotTakeAProductFromAnotherPromotion() throws Exception {
+        create("promotions", promotion("FIRST10", 10));
+        mvc.perform(post("/api/v1/management/promotions").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(promotion("SECOND10", 10))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("FIRST10")));
+    }
+
     @Test void percentagePricingRoundsDownTheDiscountAndAvoidsIntegerOverflowInDatabaseFilters() throws Exception {
         create("promotions", promotion("ROUND10", 10));
         jdbc.update("UPDATE product_variants SET price = 101 WHERE id IN (11, 12)"); entityManager.clear();
@@ -107,6 +147,16 @@ class DiscountIT {
         create("vouchers", voucher("DUPLICATE", "all", List.of()));
         mvc.perform(post("/api/v1/management/vouchers").cookie(admin).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(voucher(" duplicate ", "all", List.of())))).andExpect(status().isConflict());
+    }
+
+    @Test void multipleVouchersCanBeAssignedToSameCustomerAndCustomerSearchIncludesUsername() throws Exception {
+        create("vouchers", voucher("PERSONAL1", "user", List.of(OWNER)));
+        create("vouchers", voucher("PERSONAL2", "user", List.of(OWNER)));
+        mvc.perform(get("/api/v1/management/vouchers/customers").param("q", "catalog-reviewer").cookie(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(OWNER.toString()))
+                .andExpect(jsonPath("$.content[0].name").value("Test reviewer"))
+                .andExpect(jsonPath("$.content[0].username").value("catalog-reviewer"))
+                .andExpect(jsonPath("$.content[0].email").value("reviewer@example.invalid"));
     }
 
     @Test void quoteUsesOnlySelectedOwnedCartRowsStacksDiscountsAndDoesNotConsumeVoucher() throws Exception {
