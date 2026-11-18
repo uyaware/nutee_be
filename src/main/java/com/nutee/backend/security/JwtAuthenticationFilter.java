@@ -63,7 +63,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 var user = users.findById(UUID.fromString(jwt.getSubject()))
                         .orElseThrow(() -> new BadCredentialsException("Invalid account."));
                 if (!user.isActive()) throw new BadCredentialsException("Invalid account.");
-                if (!user.isEmailVerified()) {
+                if (user.requiresEmailVerification()) {
                     var pending = verification.suspendAccess(user.getId());
                     cookies.pending(request, response, pending);
                     SecurityContextHolder.clearContext();

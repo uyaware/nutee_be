@@ -79,6 +79,10 @@ public class User {
         emailVerificationAttempts = 0;
     }
 
+    public boolean requiresEmailVerification() {
+        return "CUSTOMER".equals(role) && !emailVerified;
+    }
+
     /** Thay mã xác thực email, giữ vòng đời độc lập với mã khôi phục mật khẩu. */
     public void requestEmailVerification(String hash, Instant expiresAt) {
         emailVerificationHash = hash;

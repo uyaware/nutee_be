@@ -65,11 +65,13 @@ public class AuthService {
     /** Chỉ đăng nhập bằng email; tài khoản chưa xác thực không được cấp phiên đầy đủ. */
     public AuthResponse login(LoginRequest request) {
         String identifier = normalize(request.identifier());
-        if (!identifier.contains("@")) throw new BadCredentialsException("Email is required.");
-        User user = users.findLockedByEmailIgnoreCase(identifier).orElse(null);
+        boolean byEmail = identifier.contains("@");
+        User user = (byEmail ? users.findLockedByEmailIgnoreCase(identifier)
+                : users.findLockedByUsernameIgnoreCase(identifier)).orElse(null);
         String encoded = user != null && user.getPassword() != null ? user.getPassword() : dummyPassword;
         boolean correct = passwords.matches(request.password(), encoded);
-        if (!correct || user == null || user.getPassword() == null) {
+        if (!correct || user == null || user.getPassword() == null
+                || (!byEmail && "CUSTOMER".equals(user.getRole()))) {
             throw new BadCredentialsException("Invalid credentials.");
         }
         if (!user.isActive()) {
@@ -91,7 +93,7 @@ public class AuthService {
             user.replaceRefreshToken(null);
             throw new BadCredentialsException("Invalid refresh token.");
         }
-        if (!user.isEmailVerified()) {
+        if (user.requiresEmailVerification()) {
             user.replaceRefreshToken(null);
             throw new EmailNotVerifiedException();
         }
@@ -171,7 +173,7 @@ public class AuthService {
         if (!locked.isActive()) {
             throw new DisabledException("Account is disabled.");
         }
-        if (!locked.isEmailVerified()) return verification.begin(locked);
+        if (locked.requiresEmailVerification()) return verification.begin(locked);
         return storeTokens(locked, tokens.issue(locked));
     }
 
@@ -202,7 +204,7 @@ public class AuthService {
         if (!user.isActive()) {
             throw new BadCredentialsException("Invalid account.");
         }
-        if (!user.isEmailVerified()) throw new EmailNotVerifiedException();
+        if (user.requiresEmailVerification()) throw new EmailNotVerifiedException();
         return user;
     }
 

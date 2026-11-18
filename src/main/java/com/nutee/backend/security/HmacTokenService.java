@@ -56,7 +56,7 @@ public class HmacTokenService {
 
     /** Xoay cặp token nhưng giữ nguyên hạn cuối của phiên refresh ban đầu. */
     public AuthResponse issue(User user, Instant refreshExpiresAt) {
-        if (!user.isActive() || !user.isEmailVerified()) {
+        if (!user.isActive() || user.requiresEmailVerification()) {
             throw new EmailNotVerifiedException();
         }
         Instant now = Instant.now();

@@ -128,7 +128,7 @@ class AuthFlowIT {
         register(username);
         mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsBytes(Map.of("identifier", username, "password", PASSWORD))))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnauthorized());
         for (String identifier : new String[]{(username + "@example.com").toUpperCase(), " " + username + "@example.com "}) {
             mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(Map.of("identifier", identifier, "password", PASSWORD))))
@@ -350,8 +350,8 @@ class AuthFlowIT {
     }
 
     @Test
-    void unverifiedAccountsOfEveryRoleCannotUseLegacyAccessAndRefreshTokens() throws Exception {
-        for (String role : new String[] {"CUSTOMER", "STAFF", "ADMIN"}) {
+    void unverifiedCustomerCannotUseLegacyAccessAndRefreshTokens() throws Exception {
+        for (String role : new String[] {"CUSTOMER"}) {
             JsonNode session = register(username());
             UUID id = UUID.fromString(session.path("user").path("id").asText());
             jdbc.update("UPDATE users SET role = ?, email_verified = false WHERE id = ?", role, id);
@@ -370,6 +370,25 @@ class AuthFlowIT {
             mvc.perform(get("/api/v1/products").cookie(new Cookie("accessToken", session.path("accessToken").asText())))
                     .andExpect(status().isOk());
             assertThat(response.getCookie("emailVerification").getMaxAge()).isBetween(1, 900);
+        }
+    }
+
+    @Test
+    void backofficeCanLoginWithUsernameWithoutEmailVerification() throws Exception {
+        for (String role : new String[] {"STAFF", "ADMIN"}) {
+            String username = username();
+            var user = com.nutee.backend.user.entity.User.create(username, username + "@example.com",
+                    passwords.encode(PASSWORD), username, false, null);
+            user.updateAccess(role, true);
+            users.saveAndFlush(user);
+            var response = mvc.perform(post("/api/v1/auth/login").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(Map.of("identifier", username.toUpperCase(), "password", PASSWORD))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.verificationRequired").value(false))
+                    .andExpect(jsonPath("$.user.emailVerified").value(false)).andReturn().getResponse();
+            mvc.perform(get("/api/v1/auth/me").cookie(response.getCookie("accessToken")))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.role").value(role));
+            mvc.perform(post("/api/v1/auth/refresh").with(csrf()).cookie(response.getCookie("refreshToken")))
+                    .andExpect(status().isOk());
         }
     }
 
