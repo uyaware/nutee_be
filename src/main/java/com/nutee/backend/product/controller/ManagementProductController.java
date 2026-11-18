@@ -6,6 +6,7 @@ import com.nutee.backend.product.service.ManagementProductService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,6 +28,11 @@ public class ManagementProductController {
     @PostMapping @ResponseStatus(HttpStatus.CREATED)
     public ManagementProductResponse create(@Valid @RequestBody ManagementProductRequest request) { return service.create(request); }
     @PutMapping("/{id}") public ManagementProductResponse update(@PathVariable int id, @Valid @RequestBody ManagementProductRequest request) { return service.update(id, request); }
+    public record PublicationRequest(@NotNull Boolean published) {}
+    @PatchMapping("/{id}/publication")
+    public ManagementProductResponse setPublished(@PathVariable int id, @Valid @RequestBody PublicationRequest request) { return service.setPublished(id, request.published()); }
+    @PutMapping("/{id}/default-variant/{variantId}")
+    public ManagementProductResponse setDefaultVariant(@PathVariable int id, @PathVariable int variantId) { return service.setDefaultVariant(id, variantId); }
     @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void delete(@PathVariable int id) { service.delete(id); }
 
     @PostMapping("/{id}/variants") @ResponseStatus(HttpStatus.CREATED)

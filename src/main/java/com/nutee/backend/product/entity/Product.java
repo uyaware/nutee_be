@@ -50,6 +50,8 @@ public class Product {
     private Promotion promotion;
 
     public void assignPromotion(Promotion rule) { promotion = rule; }
+    public void setPublished(boolean published) { this.published = published; }
+    public void setDefaultVariantId(Integer variantId) { this.defaultVariantId = variantId; }
     /** Cập nhật điểm trung bình từ bản sửa mới nhất của mỗi đánh giá dưới khóa sản phẩm. */
     public void updateAverageRating(BigDecimal rating) { avgRating = rating; }
 

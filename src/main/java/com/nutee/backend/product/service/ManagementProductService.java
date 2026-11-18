@@ -40,9 +40,23 @@ public class ManagementProductService {
 
     @Transactional(readOnly = true)
     public PageResponse<ManagementProductSummary> list(String q, int page, int size) {
-        return PageResponse.from(products.findByNameContainingIgnoreCase(q.strip(), PageRequest.of(page, size,
-                Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.asc("id"))))
-                .map(p -> new ManagementProductSummary(p.getId(), p.getName(), Boolean.TRUE.equals(p.getPublished()), p.getUpdatedAt())));
+        var result = products.findByNameContainingIgnoreCase(q.strip(), PageRequest.of(page, size,
+                Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.asc("id"))));
+        List<Integer> ids = result.getContent().stream().map(Product::getId).toList();
+        Map<Integer, Product> details = ids.isEmpty() ? Map.of() : products.findDistinctByIdIn(ids).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        Map<Integer, List<ProductImage>> productImages = ids.isEmpty() ? Map.of()
+                : images.findByProduct_IdIn(ids, Sort.by("id")).stream()
+                        .collect(Collectors.groupingBy(image -> image.getProduct().getId()));
+        return PageResponse.from(result.map(row -> {
+            Product p = details.get(row.getId());
+            List<ProductImage> pictures = productImages.getOrDefault(p.getId(), List.of());
+            String imageUrl = pictures.stream().filter(ProductImage::isPrimaryImage).findFirst()
+                    .or(() -> pictures.stream().findFirst()).map(ProductImage::getImageUrl).orElse(null);
+            return new ManagementProductSummary(p.getId(), p.getName(), Boolean.TRUE.equals(p.getPublished()),
+                    p.getUpdatedAt(), imageUrl, p.getBrand() == null ? null : p.getBrand().getName(),
+                    p.getCategories().stream().map(Category::getName).sorted().toList(), p.getAvgRating(), p.getSoldCount());
+        }));
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +74,23 @@ public class ManagementProductService {
         Product product = lockedProduct(id);
         if (request.defaultVariantId() != null) variant(id, request.defaultVariantId());
         product.update(request.name().strip(), request.description(), request.published(), brand(request.brandId()), categorySet(request.categoryIds()), request.defaultVariantId());
+        products.flush();
+        return response(product);
+    }
+
+    @Transactional
+    public ManagementProductResponse setPublished(int id, boolean published) {
+        Product product = lockedProduct(id);
+        product.setPublished(published);
+        products.flush();
+        return response(product);
+    }
+
+    @Transactional
+    public ManagementProductResponse setDefaultVariant(int id, int variantId) {
+        Product product = lockedProduct(id);
+        variant(id, variantId);
+        product.setDefaultVariantId(variantId);
         products.flush();
         return response(product);
     }
@@ -122,7 +153,13 @@ public class ManagementProductService {
     @Transactional
     public ManagementProductResponse saveImage(int productId, Integer imageId, ManagementImageRequest request) {
         Product product = lockedProduct(productId);
-        if (request.primary()) for (ProductImage existing : images.findByProduct_IdOrderById(productId)) existing.update(existing.getImageUrl(), false);
+        if (request.primary()) {
+            for (ProductImage existing : images.findByProduct_IdOrderById(productId)) {
+                if (existing.isPrimaryImage()) existing.update(existing.getImageUrl(), false);
+            }
+            // Ghi thay đổi trước khi chọn ảnh mới để không vi phạm unique index ảnh chính.
+            images.flush();
+        }
         if (imageId == null) images.save(ProductImage.create(product, request.url().strip(), request.primary()));
         else image(productId, imageId).update(request.url().strip(), request.primary());
         images.flush();

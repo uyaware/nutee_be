@@ -66,12 +66,30 @@ class ManagementProductAndUserIT {
                 .content("{\"name\":\"Test product\",\"published\":false,\"categoryIds\":[]}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         int id = json.readTree(created).get("id").asInt();
+        mvc.perform(post(path + "/" + id + "/images").cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"/test-product.jpg\",\"primary\":true}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get(path).param("q", "Test product").cookie(staff))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].imageUrl").value("/test-product.jpg"))
+                .andExpect(jsonPath("$.content[0].name").value("Test product"))
+                .andExpect(jsonPath("$.content[0].categories").isArray())
+                .andExpect(jsonPath("$.content[0].avgRating").value(0))
+                .andExpect(jsonPath("$.content[0].soldCount").value(0));
         String saved = mvc.perform(post(path + "/" + id + "/variants").cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"sku\":\"TEST-001\",\"price\":100,\"quantity\":4,\"specifications\":[{\"name\":\"Color\",\"value\":\"Blue\"}]}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.variants[0].specifications[0].value").value("Blue"))
                 .andReturn().getResponse().getContentAsString();
         JsonNode variant = json.readTree(saved).get("variants").get(0);
         int variantId = variant.get("id").asInt();
+        mvc.perform(put(path + "/" + id + "/default-variant/" + variantId).cookie(staff).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.defaultVariantId").value(variantId));
+        mvc.perform(patch(path + "/" + id + "/publication").cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"published\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.published").value(true));
+        mvc.perform(patch(path + "/" + id + "/publication").cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"published\":false}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.published").value(false))
+                .andExpect(jsonPath("$.defaultVariantId").value(variantId));
         mvc.perform(put(path + "/" + id + "/variants/" + variantId).cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"sku\":\"TEST-001\",\"price\":100,\"quantity\":6,\"expectedQuantity\":3,\"specifications\":[]}"))
                 .andExpect(status().isConflict());
@@ -82,6 +100,31 @@ class ManagementProductAndUserIT {
                 .andExpect(jsonPath("$.variants[0].specifications[0].value").value("Red"));
         mvc.perform(delete(path + "/" + id).cookie(staff).with(csrf())).andExpect(status().isNoContent());
         assertThat(jdbc.queryForObject("select count(*) from products where id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test void primaryImageCanBeChangedRepeatedlyAndWhenAddingAnImage() throws Exception {
+        String path = "/api/v1/management/products";
+        String created = mvc.perform(post(path).cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Image test\",\"published\":false,\"categoryIds\":[]}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String imagePath = path + "/" + json.readTree(created).get("id").asInt() + "/images";
+        String first = mvc.perform(post(imagePath).cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"/first.jpg\",\"primary\":true}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        int firstId = json.readTree(first).get("images").get(0).get("id").asInt();
+        String second = mvc.perform(post(imagePath).cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"/second.jpg\",\"primary\":true}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.images[0].primary").value(false))
+                .andExpect(jsonPath("$.images[1].primary").value(true)).andReturn().getResponse().getContentAsString();
+        int secondId = json.readTree(second).get("images").get(1).get("id").asInt();
+        mvc.perform(put(imagePath + "/" + firstId).cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"/first.jpg\",\"primary\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.images[0].primary").value(true))
+                .andExpect(jsonPath("$.images[1].primary").value(false));
+        mvc.perform(put(imagePath + "/" + secondId).cookie(staff).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"/second.jpg\",\"primary\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.images[0].primary").value(false))
+                .andExpect(jsonPath("$.images[1].primary").value(true));
     }
 
     @Test void onlyAdminCanManageUsersAndCannotModifyOwnAccess() throws Exception {
